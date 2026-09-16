@@ -38,7 +38,8 @@ ensure_env_file() {
 # provider into .env. For anthropic, prompts for an API key only if one
 # isn't already set (never overwrites a key that's already there).
 configure_provider() {
-  local root_dir="$1" provider="$2" env_file="$root_dir/.env"
+  local root_dir="$1" provider="$2"
+  local env_file="$root_dir/.env"
 
   case "$provider" in
     ollama)
