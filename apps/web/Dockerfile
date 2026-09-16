@@ -10,7 +10,13 @@ COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
-RUN npm ci
+# --workspace restricts what actually gets installed to @app/web and
+# @app/shared - apps/api/package.json above is only there to satisfy npm's
+# workspace resolution against the lockfile, not to install NestJS/Prisma.
+# The cache mount keeps downloaded/extracted packages across builds instead
+# of re-fetching and re-writing a fresh multi-GB layer on every rebuild.
+RUN --mount=type=cache,target=/root/.npm \
+  npm ci --workspace=@app/web --workspace=@app/shared --include-workspace-root
 
 COPY packages/shared packages/shared
 COPY apps/web apps/web

@@ -94,6 +94,30 @@ a bypassed or missing hook still gets caught.
 | `npm run format` / `npm run format:check` | Prettier - write or verify; the pre-commit hook runs the write version on staged files |
 | `npm run db:migrate`                      | Creates/applies a migration against the dev database                                   |
 | `npm run db:studio`                       | Prisma Studio, for poking at indexed chunks                                            |
+| `npm run docker:clean`                    | Frees disk: prunes dangling images plus build cache untouched for 7+ days              |
+
+### Docker disk usage
+
+`setup` runs `docker image prune -f` automatically after every build, so
+the previous build's now-unreferenced image layers don't silently pile up.
+That's the main source of runaway disk usage from this repo specifically -
+every `--build` leaves the old image's layers behind as a dangling image once
+the tag moves to the new one.
+
+Two things worth knowing if you still hit "No space left on device" from a
+container (Postgres included - it's usually the container that happens to be
+writing at the time, not the actual cause):
+
+- Docker Desktop caps the whole Linux VM's disk at a fixed size (Settings ->
+  Resources -> Advanced -> Disk usage limit). If that machine has other
+  projects' images/volumes on it too, headroom disappears fast - especially
+  once you add a ~4.7GB Ollama model on top. Give it real headroom (100GB+ if
+  you can spare it).
+- `docker system df -v` breaks down exactly what's using space (images,
+  volumes, build cache) - run it before reaching for `docker system prune -a`,
+  which also removes images/cache for _other_ projects on the same machine.
+  `npm run docker:clean` only touches this repo's dangling images and old
+  build cache, nothing currently in use.
 
 ---
 

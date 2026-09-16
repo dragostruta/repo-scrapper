@@ -42,6 +42,17 @@ else
   docker compose up --build -d
 fi
 
+# Every `--build` leaves the previous image's layers behind as a dangling
+# (untagged) image once the tag moves to the new build - they're pure dead
+# weight (docker keeps them because a container could theoretically still
+# reference one, but nothing here ever does). Left alone across enough
+# `setup`/`llm:switch` runs, these silently accumulate into gigabytes and can
+# fill Docker Desktop's disk allocation, which is what took the `db`
+# container down with a "No space left on device" panic in the past. This is
+# best-effort and never fails setup - if pruning fails (or `docker` needs a
+# permission prompt to run non-interactively) it's a no-op, not a blocker.
+docker image prune -f >/dev/null 2>&1 || true
+
 echo
 echo "Done."
 echo "  Web UI: http://localhost:3000"

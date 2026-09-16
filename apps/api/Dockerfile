@@ -17,7 +17,16 @@ COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
-RUN npm ci
+# --workspace restricts what actually gets installed to @app/api and
+# @app/shared - apps/web/package.json above is only there to satisfy npm's
+# workspace resolution against the lockfile, not to pull in Next.js/React.
+# Without this, `npm prune --omit=dev` later doesn't help: web's next/react/
+# etc. are regular dependencies, not devDependencies, so they'd ship in this
+# image unused (this alone was ~1.5GB of dead weight in the API image).
+# The cache mount keeps downloaded/extracted packages across builds instead
+# of re-fetching and re-writing a fresh multi-GB layer on every rebuild.
+RUN --mount=type=cache,target=/root/.npm \
+  npm ci --workspace=@app/api --workspace=@app/shared --include-workspace-root
 
 COPY packages/shared packages/shared
 COPY apps/api apps/api

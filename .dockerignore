@@ -1,0 +1,32 @@
+# Keeps the build context small and prevents host artifacts (which may not
+# match what `npm ci` would produce, or may be platform-specific) from ever
+# reaching the image. Docker computes each COPY layer's cache key from the
+# content it copies - a smaller, more stable context also means fewer
+# accidental cache invalidations between builds.
+
+node_modules
+**/node_modules
+
+.git
+.gitignore
+
+# Build outputs - always regenerated inside the image.
+dist
+**/dist
+.next
+**/.next
+coverage
+**/coverage
+
+# Local-only state, never needed inside a container.
+.cache
+**/.cache
+*.log
+.env
+.env.*
+!.env.example
+
+# Editor/OS cruft.
+.vscode
+.idea
+.DS_Store
