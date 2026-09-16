@@ -10,6 +10,16 @@ const eslintConfig = [
   // "should not be edited" - never worth linting or auto-fixing.
   { ignores: ['.next/**', 'node_modules/**', 'coverage/**', 'next-env.d.ts'] },
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
+  // Explicitly configure TypeScript parser for monorepo: each app has its own tsconfig.json
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    languageOptions: {
+      parserOptions: {
+        tsconfigRootDir: dirname(fileURLToPath(import.meta.url)),
+        project: './tsconfig.json',
+      },
+    },
+  },
   // Last: turns off any stylistic rule that would otherwise fight Prettier.
   prettierConfig,
 ];
