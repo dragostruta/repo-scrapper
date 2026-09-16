@@ -3,6 +3,17 @@
 import { useState } from 'react';
 import type { AskResponse, Citation, ConversationTurn, RepositorySummary } from '@app/shared';
 import { ApiError, askRepository } from '@/lib/api';
+import { MarkdownAnswer } from '@/components/markdown-answer';
+import { CitationChip } from '@/components/citation-chip';
+
+/** Shown on an empty chat so a new user has something to click instead of
+ * facing a blank input - generic enough to make sense for almost any repo. */
+const STARTER_QUESTIONS = [
+  'What does this project do?',
+  'What are the main dependencies?',
+  'Where is the entry point / main function?',
+  'What are the API endpoints, if any?',
+];
 
 interface Message {
   id: string;
@@ -45,7 +56,11 @@ export function ChatPanel({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = question.trim();
+    await ask(question);
+  }
+
+  async function ask(raw: string) {
+    const trimmed = raw.trim();
     if (!trimmed) return;
 
     const id = crypto.randomUUID();
@@ -104,13 +119,27 @@ export function ChatPanel({
 
       <div className="flex-1 space-y-6 overflow-y-auto pb-4">
         {messages.length === 0 && (
-          <p className="text-sm text-[var(--color-ink-muted)]">
-            Ask how something works, where a piece of functionality lives, or what an endpoint does.
-            Answers are grounded in this repository only.
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--color-ink-muted)]">
+              Ask how something works, where a piece of functionality lives, or what an endpoint
+              does. Answers are grounded in this repository only.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {STARTER_QUESTIONS.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => void ask(q)}
+                  className="rounded-full border border-[var(--color-border-subtle)] px-3 py-1.5 text-xs text-[var(--color-ink-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} />
+          <MessageBubble key={m.id} message={m} repositoryId={repo.id} />
         ))}
       </div>
 
@@ -135,7 +164,7 @@ export function ChatPanel({
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message, repositoryId }: { message: Message; repositoryId: string }) {
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium">{message.question}</p>
@@ -151,19 +180,12 @@ function MessageBubble({ message }: { message: Message }) {
 
       {message.answer && (
         <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] p-4">
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.answer}</p>
+          <MarkdownAnswer text={message.answer} />
 
           {message.citations && message.citations.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[var(--color-border-subtle)] pt-3">
               {message.citations.map((c, i) => (
-                <span
-                  key={i}
-                  title={`score ${c.score.toFixed(2)}`}
-                  className="rounded-full border border-[var(--color-border-subtle)] px-2 py-0.5 text-xs text-[var(--color-ink-muted)]"
-                >
-                  {c.path}:{c.startLine}-{c.endLine}
-                  {c.symbol ? ` (${c.symbol})` : ''}
-                </span>
+                <CitationChip key={i} repositoryId={repositoryId} citation={c} />
               ))}
             </div>
           )}

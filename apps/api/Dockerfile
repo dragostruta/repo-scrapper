@@ -31,12 +31,20 @@ RUN npm prune --omit=dev
 FROM base AS runner
 ENV NODE_ENV=production
 COPY --from=builder /app /app
-COPY apps/api/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
- && mkdir -p /data/models /data/repos \
+RUN mkdir -p /data/models /data/repos \
  && chown -R node:node /data /app
 # Repository contents are untrusted input; nothing here needs root.
 USER node
 EXPOSE 3001
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["node", "apps/api/dist/main.js"]
+# The startup/migration logic (equivalent to apps/api/docker-entrypoint.sh,
+# kept in the repo as the readable canonical copy - update both if you
+# change this) is inlined directly into ENTRYPOINT rather than COPY'd in as
+# a separate script file and exec'd. Docker Desktop - notably with the
+# containerd image store on Apple Silicon - has a known bug where a COPY'd
+# file's permission bits can come back corrupted at container start once a
+# later RUN step touches them (e.g. `chmod +x`), surfacing as "Permission
+# denied" even trying to just open the file, regardless of the mode the
+# build set. Baking the command into the image config instead of a
+# filesystem layer sidesteps that whole class of bug: there is no separate
+# file for it to corrupt.
+ENTRYPOINT ["/bin/sh", "-c", "set -e; echo '[entrypoint] applying database migrations...'; (cd apps/api && npx prisma migrate deploy); echo '[entrypoint] starting api'; exec node apps/api/dist/main.js"]

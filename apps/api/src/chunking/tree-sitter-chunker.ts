@@ -95,7 +95,15 @@ function mergeSmallSegments(segments: RawSegment[], lines: string[]): RawSegment
       out[out.length - 1] = {
         startLine: prev.startLine,
         endLine: segment.endLine,
-        symbol: prev.symbol ?? segment.symbol,
+        // Merging can fold a second named symbol (e.g. a small trailing
+        // `const foo = () => {}`) into the previous chunk. Silently keeping
+        // only one name would mean a chunk's citation/label no longer
+        // matches part of its content, so combine both names rather than
+        // dropping one.
+        symbol:
+          prev.symbol && segment.symbol && prev.symbol !== segment.symbol
+            ? `${prev.symbol}, ${segment.symbol}`
+            : (prev.symbol ?? segment.symbol),
       };
     } else {
       out.push({ ...segment });

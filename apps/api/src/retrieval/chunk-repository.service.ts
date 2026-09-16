@@ -43,6 +43,22 @@ export class ChunkRepository {
     await this.prisma.chunk.deleteMany({ where: { repositoryId } });
   }
 
+  /** Scoped to repositoryId as well as id so a citation from one repository
+   * can never be used to read a chunk out of another. */
+  async findById(repositoryId: string, chunkId: string) {
+    return this.prisma.chunk.findFirst({
+      where: { id: chunkId, repositoryId },
+      select: {
+        filePath: true,
+        startLine: true,
+        endLine: true,
+        symbol: true,
+        language: true,
+        content: true,
+      },
+    });
+  }
+
   async insertMany(repositoryId: string, chunks: ChunkToInsert[]): Promise<void> {
     for (let i = 0; i < chunks.length; i += INSERT_BATCH_SIZE) {
       const batch = chunks.slice(i, i + INSERT_BATCH_SIZE);
