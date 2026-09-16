@@ -16,7 +16,10 @@ function chunk(overrides: Partial<RetrievedChunk> & { score: number }): Retrieve
 
 describe('assembleContext', () => {
   it('keeps every chunk when the total is under budget', () => {
-    const chunks = [chunk({ score: 0.9, content: 'a'.repeat(40) }), chunk({ score: 0.8, content: 'b'.repeat(40) })];
+    const chunks = [
+      chunk({ score: 0.9, content: 'a'.repeat(40) }),
+      chunk({ score: 0.8, content: 'b'.repeat(40) }),
+    ];
     const result = assembleContext(chunks, 1000);
     expect(result.chunks).toHaveLength(2);
     expect(result.text).toContain('src/a.ts');
@@ -51,7 +54,10 @@ describe('assembleContext', () => {
   });
 
   it('includes the symbol name in the formatted block when present', () => {
-    const result = assembleContext([chunk({ score: 0.9, symbol: 'myFunction', content: 'body' })], 1000);
+    const result = assembleContext(
+      [chunk({ score: 0.9, symbol: 'myFunction', content: 'body' })],
+      1000,
+    );
     expect(result.text).toContain('(myFunction)');
   });
 });

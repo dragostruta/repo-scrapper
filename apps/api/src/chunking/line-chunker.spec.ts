@@ -35,7 +35,12 @@ describe('chunkByLines', () => {
   });
 
   it('attaches the given symbol name to every produced chunk', () => {
-    const lines = Array.from({ length: 200 }, (_, i) => `x${i}`).join('\n');
+    // Same shape as the "splits long text" fixture above - long enough per
+    // line that the joined text clears TARGET_CHUNK_CHARS and actually
+    // splits. A prior version of this fixture (short "x0".."x199" lines,
+    // ~900 chars total) stayed under the threshold and produced a single
+    // chunk, so the >1 assertion below was untested.
+    const lines = Array.from({ length: 200 }, (_, i) => `const line${i} = ${i};`).join('\n');
     const chunks = chunkByLines(lines, 'bigFunction');
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((c) => c.symbol === 'bigFunction')).toBe(true);

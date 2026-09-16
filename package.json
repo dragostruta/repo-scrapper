@@ -16,10 +16,15 @@
     "db:generate": "npm run db:generate --workspace=@app/api",
     "db:studio": "npm run db:studio --workspace=@app/api",
     "dev:api": "npm run dev --workspace=@app/api",
-    "dev:web": "npm run dev --workspace=@app/web"
+    "dev:web": "npm run dev --workspace=@app/web",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.5.1",
     "prettier": "^3.4.0",
     "typescript": "^5.7.0"
   },

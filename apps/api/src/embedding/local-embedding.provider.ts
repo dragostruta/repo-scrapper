@@ -71,7 +71,10 @@ export class LocalEmbeddingProvider implements EmbeddingProvider, OnModuleInit {
     const model = this.config.embedding.model;
     this.logger.info({ model }, 'loading embedding model (first call may download it)');
 
-    const extractor = (await pipeline('feature-extraction', model)) as unknown as FeatureExtractionPipeline;
+    const extractor = (await pipeline(
+      'feature-extraction',
+      model,
+    )) as unknown as FeatureExtractionPipeline;
 
     this.logger.info({ model, ms: Date.now() - startedAt }, 'embedding model ready');
     return extractor;

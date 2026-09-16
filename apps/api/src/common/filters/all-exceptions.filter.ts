@@ -30,7 +30,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message = payload;
       } else {
         const obj = payload as { message?: string | string[]; error?: string };
-        message = Array.isArray(obj.message) ? obj.message.join('; ') : (obj.message ?? exception.message);
+        message = Array.isArray(obj.message)
+          ? obj.message.join('; ')
+          : (obj.message ?? exception.message);
         error = obj.error;
       }
     } else {
@@ -44,7 +46,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
           method: req.method,
           path: req.originalUrl,
           status,
-          err: exception instanceof Error ? { message: exception.message, stack: exception.stack } : exception,
+          err:
+            exception instanceof Error
+              ? { message: exception.message, stack: exception.stack }
+              : exception,
         },
         'unhandled exception',
       );

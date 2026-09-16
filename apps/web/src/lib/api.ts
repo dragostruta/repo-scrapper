@@ -1,4 +1,4 @@
-import type { AskResponse, RepositorySummary } from '@app/shared';
+import type { AskResponse, ConversationTurn, RepositorySummary } from '@app/shared';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -43,10 +43,14 @@ export function getRepository(id: string): Promise<RepositorySummary> {
   return request(`/repositories/${id}`, { cache: 'no-store' });
 }
 
-export function askRepository(id: string, question: string): Promise<AskResponse> {
+export function askRepository(
+  id: string,
+  question: string,
+  history: ConversationTurn[] = [],
+): Promise<AskResponse> {
   return request(`/repositories/${id}/ask`, {
     method: 'POST',
-    body: JSON.stringify({ question }),
+    body: JSON.stringify(history.length > 0 ? { question, history } : { question }),
   });
 }
 

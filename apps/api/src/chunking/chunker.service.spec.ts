@@ -14,7 +14,10 @@ describe('ChunkerService', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         ChunkerService,
-        { provide: AppLogger, useValue: { forContext: () => ({ warn: jest.fn(), info: jest.fn() }) } },
+        {
+          provide: AppLogger,
+          useValue: { forContext: () => ({ warn: jest.fn(), info: jest.fn() }) },
+        },
       ],
     }).compile();
     service = moduleRef.get(ChunkerService);

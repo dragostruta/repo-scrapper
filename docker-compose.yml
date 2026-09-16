@@ -7,11 +7,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
       POSTGRES_DB: ${POSTGRES_DB:-codedocs}
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-codedocs}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-codedocs}']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -49,14 +49,18 @@ services:
       ALLOWED_REPO_HOSTS: ${ALLOWED_REPO_HOSTS:-github.com}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
-      - "3001:3001"
+      - '3001:3001'
     volumes:
       - models:/data/models
       - repos:/data/repos
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test:
+        [
+          'CMD-SHELL',
+          'node -e "fetch(''http://127.0.0.1:3001/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -75,7 +79,7 @@ services:
       NODE_ENV: production
       PORT: 3000
     ports:
-      - "3000:3000"
+      - '3000:3000'
 
   # Optional: run the LLM fully in Docker too, with no local install.
   # Off by default - `docker compose --profile local-llm up` to include it,
@@ -85,9 +89,9 @@ services:
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
-    profiles: ["local-llm"]
+    profiles: ['local-llm']
     ports:
-      - "11434:11434"
+      - '11434:11434'
     volumes:
       - ollama:/root/.ollama
 

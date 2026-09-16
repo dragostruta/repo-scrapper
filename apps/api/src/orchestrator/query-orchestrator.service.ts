@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { AskResponse, Citation } from '@app/shared';
+import type { AskResponse, Citation, ConversationTurn } from '@app/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppLogger } from '../common/logging/logger.service';
 import { currentTraceId, newTraceId } from '../common/logging/trace-context';
@@ -12,6 +12,10 @@ import { LLM_PROVIDER, type LlmProvider } from '../answering/llm-provider';
  * answer. This is the single method both the HTTP controller and the future
  * MCP `ask_about_repository` tool call - see the architecture note in
  * README about the orchestrator being the one thing both adapters share.
+ *
+ * The client supplies its own conversation history with each call rather
+ * than this service holding any - keeps the server stateless like the rest
+ * of the pipeline, at the cost of the client having to resend it (see D9).
  */
 @Injectable()
 export class QueryOrchestratorService {
@@ -26,7 +30,11 @@ export class QueryOrchestratorService {
     this.logger = logger.forContext('QueryOrchestratorService');
   }
 
-  async ask(repositoryId: string, question: string): Promise<AskResponse> {
+  async ask(
+    repositoryId: string,
+    question: string,
+    history: ConversationTurn[] = [],
+  ): Promise<AskResponse> {
     const traceId = currentTraceId() ?? newTraceId();
     const totalStart = process.hrtime.bigint();
 
@@ -38,10 +46,14 @@ export class QueryOrchestratorService {
       );
     }
 
-    const { context, timings: retrievalTimings } = await this.retrieval.retrieve(repositoryId, question);
+    const retrievalQuery = buildRetrievalQuery(question, history);
+    const { context, timings: retrievalTimings } = await this.retrieval.retrieve(
+      repositoryId,
+      retrievalQuery,
+    );
 
     const generateStart = process.hrtime.bigint();
-    const answer = await this.llm.answer({ question, contextText: context.text });
+    const answer = await this.llm.answer({ question, contextText: context.text, history });
     const generate = msSince(generateStart);
 
     const timings = {
@@ -86,4 +98,14 @@ export class QueryOrchestratorService {
 
 function msSince(start: bigint): number {
   return Math.round(Number(process.hrtime.bigint() - start) / 1e6);
+}
+
+/** Prepends the previous question (not its answer) to the retrieval text, so
+ * a short follow-up ("and where is that called from?") still embeds with
+ * enough signal to retrieve on-topic chunks. Deliberately narrow - one prior
+ * question, not the full thread, and never the answer text - this is a
+ * heuristic nudge, not coreference resolution (see D9). */
+function buildRetrievalQuery(question: string, history: ConversationTurn[]): string {
+  const previousQuestion = history.at(-1)?.question;
+  return previousQuestion ? `${previousQuestion} ${question}` : question;
 }

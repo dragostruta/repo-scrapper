@@ -1,0 +1,12 @@
+node_modules
+dist
+.next
+out
+build
+coverage
+*.tsbuildinfo
+apps/api/.cache
+
+# generated - never hand-formatted, never worth reformatting
+apps/web/next-env.d.ts
+package-lock.json

@@ -6,12 +6,7 @@
  * on both sides at once instead of at runtime in the browser.
  */
 
-export type RepositoryStatus =
-  | 'PENDING'
-  | 'CLONING'
-  | 'INDEXING'
-  | 'INDEXED'
-  | 'FAILED';
+export type RepositoryStatus = 'PENDING' | 'CLONING' | 'INDEXING' | 'INDEXED' | 'FAILED';
 
 export type RepositorySource = 'GITHUB' | 'UPLOAD';
 
@@ -58,6 +53,11 @@ export interface AskResponse {
   };
   /** Correlates this answer with the structured logs on the server. */
   traceId: string;
+}
+
+export interface ConversationTurn {
+  question: string;
+  answer: string;
 }
 
 export interface ApiError {

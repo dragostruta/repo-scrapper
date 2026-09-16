@@ -113,7 +113,9 @@ function materialiseSegment(segment: RawSegment, lines: string[]): ChunkCandidat
   if (content.trim().length === 0) return [];
 
   if (content.length <= TARGET_CHUNK_CHARS) {
-    return [{ content, startLine: segment.startLine, endLine: segment.endLine, symbol: segment.symbol }];
+    return [
+      { content, startLine: segment.startLine, endLine: segment.endLine, symbol: segment.symbol },
+    ];
   }
 
   return chunkByLines(content, segment.symbol).map((chunk) => ({

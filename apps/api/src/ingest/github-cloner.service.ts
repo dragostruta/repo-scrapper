@@ -47,16 +47,7 @@ export class GithubClonerService {
     try {
       await execFileAsync(
         'git',
-        [
-          'clone',
-          '--depth',
-          '1',
-          '--single-branch',
-          '--no-tags',
-          '--',
-          repo.cloneUrl,
-          dir,
-        ],
+        ['clone', '--depth', '1', '--single-branch', '--no-tags', '--', repo.cloneUrl, dir],
         {
           timeout: cloneTimeoutMs,
           env: {

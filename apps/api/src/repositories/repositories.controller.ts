@@ -1,6 +1,9 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import type { AskResponse, RepositorySummary } from '@app/shared';
-import { IngestOrchestratorService, requireRepository } from '../orchestrator/ingest-orchestrator.service';
+import {
+  IngestOrchestratorService,
+  requireRepository,
+} from '../orchestrator/ingest-orchestrator.service';
 import { QueryOrchestratorService } from '../orchestrator/query-orchestrator.service';
 import { CreateRepositoryDto } from './dto/create-repository.dto';
 import { AskDto } from './dto/ask.dto';
@@ -34,6 +37,6 @@ export class RepositoriesController {
 
   @Post(':id/ask')
   ask(@Param('id') id: string, @Body() dto: AskDto): Promise<AskResponse> {
-    return this.query.ask(id, dto.question);
+    return this.query.ask(id, dto.question, dto.history ?? []);
   }
 }

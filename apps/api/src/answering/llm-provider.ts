@@ -1,7 +1,11 @@
+import type { ConversationTurn } from '@app/shared';
+
 export interface LlmAnswerRequest {
   question: string;
   /** Already-assembled, budget-trimmed context blocks (see retrieval/context-assembler.ts). */
   contextText: string;
+  /** Prior turns, oldest first - see D9. Empty/omitted for the first question in a chat. */
+  history?: ConversationTurn[];
 }
 
 /**

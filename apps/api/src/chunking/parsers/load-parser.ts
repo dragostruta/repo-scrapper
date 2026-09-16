@@ -66,14 +66,16 @@ export async function loadParser(language: string): Promise<TSParser | null> {
         (mod as unknown as { default?: unknown }).default) as new () => TSParser & {
         setLanguage(lang: unknown): void;
       };
-      const LanguageCtor = (mod as unknown as { Language?: { load: (path: string) => Promise<unknown> } })
-        .Language;
+      const LanguageCtor = (
+        mod as unknown as { Language?: { load: (path: string) => Promise<unknown> } }
+      ).Language;
 
       const wasmPath = resolveWasmPath(wasmFile);
       const grammar = LanguageCtor
         ? await LanguageCtor.load(wasmPath)
-        : await (ParserCtor as unknown as { Language: { load: (p: string) => Promise<unknown> } }).Language
-            .load(wasmPath);
+        : await (
+            ParserCtor as unknown as { Language: { load: (p: string) => Promise<unknown> } }
+          ).Language.load(wasmPath);
 
       const parser = new ParserCtor();
       parser.setLanguage(grammar);

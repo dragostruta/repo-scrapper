@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { RepositorySummary } from '@app/shared';
-import { ApiError, createRepository } from '@/lib/api';
+import { ApiError, createRepository, getRepository } from '@/lib/api';
 
 const STATUS_LABEL: Record<RepositorySummary['status'], string> = {
   PENDING: 'Queued',
@@ -12,11 +12,48 @@ const STATUS_LABEL: Record<RepositorySummary['status'], string> = {
   FAILED: 'Failed',
 };
 
-export function RepoIntake({ onIndexed }: { onIndexed: (repo: RepositorySummary) => void }) {
+const TERMINAL_STATUSES: RepositorySummary['status'][] = ['INDEXED', 'FAILED'];
+
+export function RepoIntake({
+  onIndexed,
+  resume,
+}: {
+  onIndexed: (repo: RepositorySummary) => void;
+  /** A repo restored from localStorage that was still cloning/indexing when
+   * the page was last open - resumes polling instead of showing a blank form. */
+  resume?: RepositorySummary;
+}) {
   const [url, setUrl] = useState('');
-  const [repo, setRepo] = useState<RepositorySummary | null>(null);
+  const [repo, setRepo] = useState<RepositorySummary | null>(resume ?? null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pollingId, setPollingId] = useState<string | null>(
+    resume && !TERMINAL_STATUSES.includes(resume.status) ? resume.id : null,
+  );
+
+  // Single effect owns the interval's lifetime, so it's always cleared - on
+  // unmount, on a status change, or when a fresh submit replaces the id.
+  useEffect(() => {
+    if (!pollingId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const current = await getRepository(pollingId);
+        setRepo(current);
+        if (current.status === 'INDEXED') {
+          setPollingId(null);
+          onIndexed(current);
+        } else if (current.status === 'FAILED') {
+          setPollingId(null);
+        }
+      } catch {
+        setPollingId(null);
+        setError('Lost connection to the API while indexing.');
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [pollingId, onIndexed]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,31 +65,12 @@ export function RepoIntake({ onIndexed }: { onIndexed: (repo: RepositorySummary)
       const created = await createRepository(url.trim());
       setRepo(created);
       if (created.status === 'INDEXED') onIndexed(created);
-      else pollUntilDone(created.id);
+      else setPollingId(created.id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not reach the API.');
     } finally {
       setSubmitting(false);
     }
-  }
-
-  function pollUntilDone(id: string) {
-    const interval = setInterval(async () => {
-      try {
-        const { getRepository } = await import('@/lib/api');
-        const current = await getRepository(id);
-        setRepo(current);
-        if (current.status === 'INDEXED') {
-          clearInterval(interval);
-          onIndexed(current);
-        } else if (current.status === 'FAILED') {
-          clearInterval(interval);
-        }
-      } catch {
-        clearInterval(interval);
-        setError('Lost connection to the API while indexing.');
-      }
-    }, 2000);
   }
 
   return (
@@ -91,7 +109,9 @@ export function RepoIntake({ onIndexed }: { onIndexed: (repo: RepositorySummary)
           )}
           <span>
             {repo.name} &middot; {STATUS_LABEL[repo.status]}
-            {repo.status === 'INDEXED' ? ` · ${repo.chunkCount} chunks across ${repo.fileCount} files` : ''}
+            {repo.status === 'INDEXED'
+              ? ` · ${repo.chunkCount} chunks across ${repo.fileCount} files`
+              : ''}
           </span>
         </div>
       )}
