@@ -72,18 +72,60 @@ real environment variables injected directly.
 
 ## Architecture
 
-```
-  Browser (Next.js)  ─┐
-                      ├─►  Orchestrator  ─►  Retrieval  ─►  Postgres + pgvector
-  MCP client (Claude) ─┘    (one core)   │
-                                         ├─►  Embeddings  (local, in-process)
-                                         └─►  LLM provider (Anthropic | Ollama)
-```
-
 The HTTP controller and the MCP server are **thin adapters over one
 orchestrator**. Neither owns business logic, so an answer given through the web
 UI and an answer given to an external LLM go through exactly the same
 retrieval, prompt and guardrails.
+
+```mermaid
+flowchart TD
+    subgraph adapters["Adapters"]
+        web["Next.js web app"]
+        mcp["MCP server (not built yet)"]
+    end
+
+    orch["Orchestrator
+IngestOrchestratorService · QueryOrchestratorService"]
+
+    web --> orch
+    mcp -.-> orch
+
+    subgraph ingest["ingest a repo"]
+        direction LR
+        parse["parseGithubUrl"] --> clone["GithubClonerService
+shallow clone, sha cache probe"]
+        clone --> walk["FileWalkerService
+skip binaries/locks/oversize"]
+        walk --> chunk["ChunkerService
+tree-sitter → line fallback"]
+        chunk --> embed1["EmbeddingProvider
+bge-small-en-v1.5, local"]
+        embed1 --> insert["ChunkRepository.insertMany
+batched raw SQL"]
+    end
+
+    subgraph query["answer a question"]
+        direction LR
+        embed2["EmbeddingProvider
+embed the question"] --> search["ChunkRepository.search
+cosine + trigram boost"]
+        search --> assemble["assembleContext
+token-budget trim"]
+        assemble --> llm["LlmProvider
+Anthropic / Ollama / stub"]
+        llm --> qlog["QueryLog
+persisted, non-blocking"]
+    end
+
+    orch --> ingest
+    orch --> query
+
+    insert --> db[("Postgres + pgvector
+repositories · chunks · query_logs")]
+    search --> db
+    llm --> ext[("Anthropic API / Ollama
+generation only - no embedding calls leave the box")]
+```
 
 ### Backend modules (`apps/api/src`)
 

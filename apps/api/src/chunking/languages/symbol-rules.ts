@@ -16,8 +16,7 @@ export interface SymbolMatch {
  * symbols, which is exactly what you want it to be.
  */
 export function matchSymbol(node: TSNode, language: string): SymbolMatch | null {
-  // `export function foo() {}` / `export class Foo {}` / `export const x = ...`
-  // wrap the real declaration - unwrap one level before matching.
+  // Unwrap `export function/class/const ...` one level before matching.
   if (node.type === 'export_statement') {
     const inner = node.namedChildren[0];
     return inner ? matchSymbol(inner, language) : null;

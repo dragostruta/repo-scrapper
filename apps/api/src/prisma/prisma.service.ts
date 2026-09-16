@@ -4,9 +4,9 @@ import { AppLogger } from '../common/logging/logger.service';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  /** Prisma's own warnings/errors go to stdout - rare enough that routing
+   * them through pino isn't worth the type gymnastics. */
   constructor(private readonly logger: AppLogger) {
-    // Prisma's own warnings and errors go to stdout. They are rare enough
-    // that routing them through pino is not worth the type gymnastics.
     super({ log: ['warn', 'error'] });
   }
 

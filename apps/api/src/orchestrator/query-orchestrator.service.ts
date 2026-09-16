@@ -51,9 +51,7 @@ export class QueryOrchestratorService {
       total: msSince(totalStart),
     };
 
-    // Citations are the chunks retrieval judged relevant enough to hand the
-    // model, not a verified per-sentence attribution of the answer text -
-    // documented as a known limitation rather than left implicit.
+    // Citations are what retrieval handed the model, not a verified per-sentence attribution.
     const citations: Citation[] = context.chunks.map((c) => ({
       path: c.filePath,
       startLine: c.startLine,

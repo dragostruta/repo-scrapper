@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { AppConfig } from '../config/app-config';
@@ -37,11 +36,10 @@ export class GithubClonerService {
     this.logger = logger.forContext('GithubClonerService');
   }
 
+  /** workspaceDir is a bind-mounted volume in Docker but may not exist yet on
+   * a fresh local checkout, and mkdtemp requires its parent to already exist. */
   async clone(repo: ParsedGithubRepo): Promise<ClonedRepo> {
     const { workspaceDir, cloneTimeoutMs, maxRepoSizeBytes } = this.config.ingest;
-    // mkdtemp requires its parent to already exist - workspaceDir is a
-    // bind-mounted volume in Docker but may not exist yet on a fresh local
-    // checkout.
     await mkdir(workspaceDir, { recursive: true });
     const parent = await mkdtemp(join(workspaceDir, 'clone-'));
     const dir = join(parent, 'repo');
@@ -63,8 +61,7 @@ export class GithubClonerService {
           timeout: cloneTimeoutMs,
           env: {
             ...process.env,
-            // Never hang on an auth prompt for a private/nonexistent repo -
-            // fail fast instead.
+            // Fail fast instead of hanging on an auth prompt for a private/nonexistent repo.
             GIT_TERMINAL_PROMPT: '0',
             GIT_ASKPASS: 'echo',
           },
@@ -89,9 +86,7 @@ export class GithubClonerService {
       );
     }
 
-    // Full sha, not --short: resolveHeadSha() below (used for the pre-clone
-    // cache check) also returns a full sha, and the two need to compare
-    // equal for the cache to ever hit.
+    // Full sha, not --short: must compare equal to resolveHeadSha()'s cache-check value.
     const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: dir });
     const revision = stdout.trim();
 
@@ -123,8 +118,8 @@ export class GithubClonerService {
     }
   }
 
+  /** clonedDir is .../clone-XXXXXX/repo - removes the whole temp parent. */
   async cleanup(clonedDir: string): Promise<void> {
-    // clonedDir is .../clone-XXXXXX/repo - remove the whole temp parent.
     await rm(join(clonedDir, '..'), { recursive: true, force: true });
   }
 

@@ -21,7 +21,9 @@ import { toRepositorySummary } from './repository-mapper';
  * caller gets the repository row back in PENDING/CLONING immediately and
  * polls getRepository() for status. An API restart mid-index leaves the row
  * stuck; sweepOrphaned() (called at boot) marks those FAILED so they are
- * retryable instead of silently stuck forever.
+ * retryable instead of silently stuck forever. (source, name, revision) is
+ * unique, so ingestGithubRepo() re-runs indexing on an existing FAILED row
+ * for that revision rather than creating a duplicate.
  */
 @Injectable()
 export class IngestOrchestratorService {
@@ -48,16 +50,30 @@ export class IngestOrchestratorService {
       const existing = await this.prisma.repository.findUnique({
         where: { source_name_revision: { source: 'GITHUB', name: parsed.name, revision: probableSha } },
       });
-      if (existing?.status === 'INDEXED') {
-        this.logger.info({ repo: parsed.name, revision: probableSha }, 'cache hit - already indexed');
+
+      if (existing) {
+        if (existing.status === 'INDEXED') {
+          this.logger.info({ repo: parsed.name, revision: probableSha }, 'cache hit - already indexed');
+          return toRepositorySummary(existing);
+        }
+
+        if (existing.status === 'FAILED') {
+          // Retry in place - a plain create() below would violate the unique constraint.
+          const retried = await this.prisma.repository.update({
+            where: { id: existing.id },
+            data: { status: 'CLONING', error: null },
+          });
+          this.startIndexing(retried.id, parsed);
+          return toRepositorySummary(retried);
+        }
+
+        // Already PENDING/CLONING/INDEXING - an ingest is in flight; hand back that row.
         return toRepositorySummary(existing);
       }
     }
 
-    // Concurrent ingests of the same repo before a real revision is known can
-    // each create their own PENDING row - acknowledged, not solved, in the
-    // README's known limitations (matches the take-home's own "edge cases to
-    // acknowledge, not necessarily solve" guidance).
+    // Concurrent ingests before a real revision is known can each create their
+    // own PENDING row - acknowledged, not solved (README known limitations).
     const repository = await this.prisma.repository.create({
       data: {
         source: 'GITHUB',
@@ -68,16 +84,23 @@ export class IngestOrchestratorService {
       },
     });
 
-    void this.runIndexing(repository.id, parsed).catch((err: unknown) => {
-      // runIndexing already persists FAILED status internally; this catch
-      // only guards against something throwing outside that try/catch.
+    this.startIndexing(repository.id, parsed);
+
+    return toRepositorySummary(repository);
+  }
+
+  /** Fire-and-forget indexing (D8: no queue in v1) - shared by the fresh-row
+   * and retry-existing-row paths above so both get the same "never let a
+   * rejection escape uncaught" guard. */
+  private startIndexing(repositoryId: string, parsed: ParsedGithubRepo): void {
+    // Guards only against something throwing outside runIndexing's own try/catch,
+    // which already persists FAILED status internally.
+    void this.runIndexing(repositoryId, parsed).catch((err: unknown) => {
       this.logger.error(
-        { repositoryId: repository.id, err: err instanceof Error ? err.message : String(err) },
+        { repositoryId, err: err instanceof Error ? err.message : String(err) },
         'indexing rejected unexpectedly',
       );
     });
-
-    return toRepositorySummary(repository);
   }
 
   async getRepository(id: string): Promise<RepositorySummary | null> {
@@ -117,8 +140,7 @@ export class IngestOrchestratorService {
 
       const files = await this.walker.walk(cloned.dir);
 
-      // Safe to call on a fresh row (no-op); makes re-running a FAILED
-      // repository through this same path safe too.
+      // No-op on a fresh row; makes re-running a FAILED repository safe too.
       await this.chunkRepository.deleteForRepository(repositoryId);
 
       let chunkCount = 0;

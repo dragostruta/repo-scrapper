@@ -22,7 +22,7 @@ export interface RepositorySummary {
   url: string | null;
   /** owner/name for GitHub, or the uploaded archive name. */
   name: string;
-  /** Short commit sha for GitHub sources, content hash for uploads. */
+  /** Full commit sha for GitHub sources (the UI truncates it for display), content hash for uploads. */
   revision: string;
   status: RepositoryStatus;
   /** Human-readable failure reason, only set when status is FAILED. */

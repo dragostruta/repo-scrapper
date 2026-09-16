@@ -7,11 +7,10 @@ import { AnsweringModule } from '../answering/answering.module';
 import { IngestOrchestratorService } from './ingest-orchestrator.service';
 import { QueryOrchestratorService } from './query-orchestrator.service';
 
+// EmbeddingModule is imported explicitly, not just transitively via
+// RetrievalModule: IngestOrchestratorService injects EMBEDDING_PROVIDER
+// directly, and Nest's module encapsulation requires that.
 @Module({
-  // EmbeddingModule is imported explicitly (not just transitively via
-  // RetrievalModule) because IngestOrchestratorService injects
-  // EMBEDDING_PROVIDER directly - Nest's module encapsulation means a
-  // token has to be exported by something this module imports itself.
   imports: [IngestModule, ChunkingModule, EmbeddingModule, RetrievalModule, AnsweringModule],
   providers: [IngestOrchestratorService, QueryOrchestratorService],
   exports: [IngestOrchestratorService, QueryOrchestratorService],
