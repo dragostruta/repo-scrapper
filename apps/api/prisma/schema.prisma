@@ -1,0 +1,108 @@
+// The embedding column is declared as Unsupported("vector(384)") because Prisma
+// has no native vector type. Reads and writes of that column go through raw SQL
+// in ChunkRepository; everything else uses the generated client normally.
+//
+// The 384 is bge-small-en-v1.5's dimensionality. Swapping the embedding model
+// for one with a different width is a migration, not a config change - that
+// coupling is deliberate and called out in the README.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector, pg_trgm]
+}
+
+enum RepositorySource {
+  GITHUB
+  UPLOAD
+}
+
+enum RepositoryStatus {
+  PENDING
+  CLONING
+  INDEXING
+  INDEXED
+  FAILED
+}
+
+model Repository {
+  id     String           @id @default(cuid())
+  source RepositorySource
+  /// Canonical https clone URL. Null for uploads.
+  url    String?
+  /// "owner/name" for GitHub, archive name for uploads.
+  name   String
+  /// Commit sha for GitHub, content hash for uploads. Together with name this
+  /// is the cache key: the same repo at the same revision is only indexed once.
+  revision String
+
+  status     RepositoryStatus @default(PENDING)
+  error      String?
+  fileCount  Int              @default(0)
+  chunkCount Int              @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  indexedAt DateTime?
+
+  chunks  Chunk[]
+  queries QueryLog[]
+
+  @@unique([source, name, revision])
+  @@index([status])
+  @@map("repositories")
+}
+
+model Chunk {
+  id           String     @id @default(cuid())
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  /// Path relative to the repository root.
+  filePath String
+  language String
+  /// Enclosing function/class/method name, when the parser could determine one.
+  symbol   String?
+  /// 1-based, inclusive - these are what citations render.
+  startLine Int
+  endLine   Int
+
+  content    String
+  tokenCount Int
+
+  embedding Unsupported("vector(384)")?
+
+  createdAt DateTime @default(now())
+
+  @@index([repositoryId])
+  @@index([repositoryId, filePath])
+  @@map("chunks")
+}
+
+/// One row per answered question. This is the retrieval trace: it is the single
+/// most useful artifact when debugging why an answer was wrong.
+model QueryLog {
+  id           String     @id @default(cuid())
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  traceId  String
+  question String
+  answer   String
+  /// Retrieved chunk ids and their scores, in rank order.
+  chunkIds String[]
+  scores   Float[]
+  /// { embedQuestion, retrieve, generate, total } in milliseconds.
+  timings  Json
+
+  createdAt DateTime @default(now())
+
+  @@index([repositoryId, createdAt])
+  @@index([traceId])
+  @@map("query_logs")
+}
