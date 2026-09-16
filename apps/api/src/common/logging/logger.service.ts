@@ -1,52 +1,58 @@
-import { Injectable, LoggerService, Scope } from '@nestjs/common';
-import pino, { Logger } from 'pino';
+import { Injectable, LoggerService } from '@nestjs/common';
+import pino, { type Logger, type LoggerOptions } from 'pino';
 import { AppConfig } from '../../config/app-config';
 import { currentTraceId } from './trace-context';
 
+export const REDACTED_PATHS = [
+  'req.headers.authorization',
+  'req.headers.cookie',
+  '*.apiKey',
+  '*.ANTHROPIC_API_KEY',
+];
+
 /**
- * Nest's default logger is fine for a demo and useless in production: no
- * structure, no correlation, no levels you can filter on. This adapter keeps
- * Nest's LoggerService interface (so framework logs flow through it too) and
- * writes newline-delimited JSON via pino, with the active trace id mixed into
- * every line automatically.
+ * pino settings: JSON in production, pretty-printed in development, the
+ * active trace id mixed into every line, and secrets redacted.
  */
-@Injectable({ scope: Scope.DEFAULT })
+export function buildLoggerOptions(
+  config: Pick<AppConfig, 'logLevel' | 'isProduction'>,
+): LoggerOptions {
+  return {
+    level: config.logLevel,
+    base: { service: 'api' },
+    mixin: () => {
+      const traceId = currentTraceId();
+      return traceId ? { traceId } : {};
+    },
+    redact: { paths: REDACTED_PATHS, censor: '[redacted]' },
+    ...(config.isProduction
+      ? {}
+      : {
+          transport: {
+            target: 'pino-pretty',
+            options: {
+              colorize: true,
+              translateTime: 'HH:MM:ss.l',
+              ignore: 'pid,hostname,service',
+            },
+          },
+        }),
+  };
+}
+
+/**
+ * Nest's LoggerService backed by pino, so framework logs and application
+ * logs share one structured, trace-correlated stream.
+ */
+@Injectable()
 export class AppLogger implements LoggerService {
   readonly root: Logger;
 
   constructor(config: AppConfig) {
-    this.root = pino({
-      level: config.logLevel,
-      base: { service: 'api' },
-      mixin: () => {
-        const traceId = currentTraceId();
-        return traceId ? { traceId } : {};
-      },
-      redact: {
-        paths: [
-          'req.headers.authorization',
-          'req.headers.cookie',
-          '*.apiKey',
-          '*.ANTHROPIC_API_KEY',
-        ],
-        censor: '[redacted]',
-      },
-      ...(config.isProduction
-        ? {}
-        : {
-            transport: {
-              target: 'pino-pretty',
-              options: {
-                colorize: true,
-                translateTime: 'HH:MM:ss.l',
-                ignore: 'pid,hostname,service',
-              },
-            },
-          }),
-    });
+    this.root = pino(buildLoggerOptions(config));
   }
 
-  /** Child logger bound to a component name, e.g. logger.forContext('ChunkingService'). */
+  /** Child logger bound to a component name, e.g. `logger.forContext('ChunkerService')`. */
   forContext(context: string): Logger {
     return this.root.child({ context });
   }

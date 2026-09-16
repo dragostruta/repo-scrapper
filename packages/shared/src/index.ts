@@ -70,6 +70,17 @@ export interface AskResponse {
   traceId: string;
 }
 
+/** One ranked code chunk from a retrieval-only search - what an MCP client
+ * (itself an LLM) gets instead of a second model's summary. */
+export interface SearchHit extends Citation {
+  content: string;
+}
+
+export interface SearchResponse {
+  results: SearchHit[];
+  timings: { embedQuestion: number; retrieve: number };
+}
+
 export interface ConversationTurn {
   question: string;
   answer: string;
@@ -79,4 +90,11 @@ export interface ApiError {
   statusCode: number;
   message: string;
   error?: string;
+}
+
+export interface HealthResponse {
+  status: 'ok' | 'degraded';
+  uptimeSeconds: number;
+  checks: { database: 'up' | 'down' };
+  config: { llmProvider: string; embeddingModel: string };
 }

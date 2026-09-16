@@ -88,22 +88,12 @@ function mergeSmallSegments(segments: RawSegment[], lines: string[]): RawSegment
   const out: RawSegment[] = [];
 
   for (const segment of segments) {
-    const prev = out[out.length - 1];
-    const chars = segmentChars(segment, lines);
-
-    if (prev && chars < MIN_CHUNK_CHARS && segmentChars(prev, lines) < TARGET_CHUNK_CHARS) {
+    const prev = out.at(-1);
+    if (prev && shouldMerge(prev, segment, lines)) {
       out[out.length - 1] = {
         startLine: prev.startLine,
         endLine: segment.endLine,
-        // Merging can fold a second named symbol (e.g. a small trailing
-        // `const foo = () => {}`) into the previous chunk. Silently keeping
-        // only one name would mean a chunk's citation/label no longer
-        // matches part of its content, so combine both names rather than
-        // dropping one.
-        symbol:
-          prev.symbol && segment.symbol && prev.symbol !== segment.symbol
-            ? `${prev.symbol}, ${segment.symbol}`
-            : (prev.symbol ?? segment.symbol),
+        symbol: combineSymbols(prev.symbol, segment.symbol),
       };
     } else {
       out.push({ ...segment });
@@ -111,6 +101,24 @@ function mergeSmallSegments(segments: RawSegment[], lines: string[]): RawSegment
   }
 
   return out;
+}
+
+/** A small segment joins its predecessor unless that predecessor is already full-sized. */
+function shouldMerge(prev: RawSegment, segment: RawSegment, lines: string[]): boolean {
+  return (
+    segmentChars(segment, lines) < MIN_CHUNK_CHARS && segmentChars(prev, lines) < TARGET_CHUNK_CHARS
+  );
+}
+
+/**
+ * Label for a merged segment. Merging can fold a second named symbol (e.g. a
+ * small trailing `const foo = () => {}`) into the previous chunk; keeping
+ * only one name would make the citation disagree with part of its content,
+ * so both names are kept.
+ */
+export function combineSymbols(first: string | null, second: string | null): string | null {
+  if (first && second && first !== second) return `${first}, ${second}`;
+  return first ?? second;
 }
 
 /** A segment that fits becomes one chunk; an oversized one (e.g. a 500-line

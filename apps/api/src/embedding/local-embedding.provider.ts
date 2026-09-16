@@ -83,7 +83,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider, OnModuleInit {
 
 /** transformers.js returns a flat [batch * dims] tensor; split it back into
  * one vector per input string. */
-function unflatten(data: Float32Array | number[], dims: number[]): number[][] {
+export function unflatten(data: Float32Array | number[], dims: number[]): number[][] {
   const [batch, width] = dims;
   const out: number[][] = [];
   for (let i = 0; i < batch; i++) {

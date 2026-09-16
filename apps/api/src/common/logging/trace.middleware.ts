@@ -1,28 +1,30 @@
 import type { NextFunction, Request, Response } from 'express';
+import { startTimer } from '../timing';
 import { AppLogger } from './logger.service';
 import { newTraceId, runWithTrace } from './trace-context';
 
-const TRACE_HEADER = 'x-trace-id';
+export const TRACE_HEADER = 'x-trace-id';
+const MAX_TRACE_ID_LENGTH = 128;
+
+/** Reuses a caller-supplied trace id when it's sane, otherwise mints one. */
+export function resolveTraceId(incoming: string | undefined): string {
+  return incoming && incoming.length <= MAX_TRACE_ID_LENGTH ? incoming : newTraceId();
+}
 
 /**
- * Plain Express middleware rather than a NestMiddleware class: it is applied
- * once in main.ts with app.use(), which sidesteps the route-pattern syntax
- * differences between Express 4 and 5 entirely.
- *
- * It opens the trace scope, echoes the id back on the response so a user can
- * quote it in a bug report, and logs one structured line per completed request.
+ * Plain Express middleware (applied once with app.use()) rather than a
+ * NestMiddleware class, which sidesteps Express 4/5 route-pattern differences.
+ * Opens the trace scope, echoes the id on the response so users can quote it,
+ * and logs one structured line per completed request.
  */
 export function createTraceMiddleware(logger: AppLogger) {
   return function traceMiddleware(req: Request, res: Response, next: NextFunction): void {
-    const incoming = req.header(TRACE_HEADER);
-    const traceId = incoming && incoming.length <= 128 ? incoming : newTraceId();
+    const traceId = resolveTraceId(req.header(TRACE_HEADER));
     res.setHeader(TRACE_HEADER, traceId);
-
-    const startedAt = process.hrtime.bigint();
+    const elapsed = startTimer();
 
     runWithTrace(traceId, () => {
-      res.on('finish', () => {
-        const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      res.on('finish', () =>
         logger.root.info(
           {
             context: 'http',
@@ -30,11 +32,11 @@ export function createTraceMiddleware(logger: AppLogger) {
             method: req.method,
             path: req.originalUrl,
             status: res.statusCode,
-            durationMs: Math.round(durationMs),
+            durationMs: elapsed(),
           },
           'request completed',
-        );
-      });
+        ),
+      );
       next();
     });
   };

@@ -51,3 +51,13 @@ if [[ "$PROVIDER" == "ollama" ]]; then
   echo "The model is downloading in the background if this is the first run -"
   echo "check progress with: docker compose logs -f ollama-pull"
 fi
+
+# The MCP server runs on the host (Claude Code spawns it), so it's built here
+# rather than in Docker. Best effort: the web app works without it.
+echo
+if [[ -d "$ROOT_DIR/node_modules" ]] && npm run --silent mcp:build >/dev/null 2>&1; then
+  echo "MCP server built. Open Claude Code in this folder and approve the"
+  echo "\"repo-scrapper\" server from .mcp.json - see README > Using it from Claude Code."
+else
+  echo "Skipped building the MCP server (run \`npm install\` then \`npm run mcp:build\`)."
+fi

@@ -44,87 +44,92 @@ const envSchema = z.object({
 });
 
 export type Env = z.infer<typeof envSchema>;
+export type LlmProviderName = Env['LLM_PROVIDER'];
 
+/** Validates raw environment variables, throwing one readable error listing
+ * every problem at once rather than failing on the first. */
+export function parseEnv(raw: NodeJS.ProcessEnv): Env {
+  const parsed = envSchema.safeParse(raw);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `  - ${i.path.join('.') || '(root)'}: ${i.message}`)
+      .join('\n');
+    throw new Error(`Invalid environment configuration:\n${issues}`);
+  }
+  assertProviderCredentials(parsed.data);
+  return parsed.data;
+}
+
+function assertProviderCredentials(env: Env): void {
+  if (env.LLM_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
+    throw new Error(
+      'LLM_PROVIDER=anthropic requires ANTHROPIC_API_KEY. ' +
+        'Set it in .env, or use LLM_PROVIDER=ollama to run fully local.',
+    );
+  }
+}
+
+function parseHostList(value: string): string[] {
+  return value
+    .split(',')
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Typed, grouped view of the environment. Every section is built once in
+ * the constructor and frozen, so reading config is free and nothing can
+ * mutate it at runtime.
+ */
 @Injectable()
 export class AppConfig {
-  private readonly env: Env;
+  readonly nodeEnv: Env['NODE_ENV'];
+  readonly isProduction: boolean;
+  readonly port: number;
+  readonly logLevel: Env['LOG_LEVEL'];
+  readonly llm;
+  readonly embedding;
+  readonly retrieval;
+  readonly ingest;
 
-  constructor() {
-    const parsed = envSchema.safeParse(process.env);
-    if (!parsed.success) {
-      const issues = parsed.error.issues
-        .map((i) => `  - ${i.path.join('.') || '(root)'}: ${i.message}`)
-        .join('\n');
-      throw new Error(`Invalid environment configuration:\n${issues}`);
-    }
-    this.env = parsed.data;
+  constructor(raw: NodeJS.ProcessEnv = process.env) {
+    const env = parseEnv(raw);
 
-    if (this.env.LLM_PROVIDER === 'anthropic' && !this.env.ANTHROPIC_API_KEY) {
-      throw new Error(
-        'LLM_PROVIDER=anthropic requires ANTHROPIC_API_KEY. ' +
-          'Set it in .env, or use LLM_PROVIDER=ollama to run fully local.',
-      );
-    }
-  }
+    this.nodeEnv = env.NODE_ENV;
+    this.isProduction = env.NODE_ENV === 'production';
+    this.port = env.API_PORT;
+    this.logLevel = env.LOG_LEVEL;
 
-  get nodeEnv(): Env['NODE_ENV'] {
-    return this.env.NODE_ENV;
-  }
+    this.llm = Object.freeze({
+      provider: env.LLM_PROVIDER,
+      anthropic: Object.freeze({
+        apiKey: env.ANTHROPIC_API_KEY ?? '',
+        model: env.ANTHROPIC_MODEL,
+        maxTokens: env.ANTHROPIC_MAX_TOKENS,
+      }),
+      ollama: Object.freeze({ baseUrl: env.OLLAMA_BASE_URL, model: env.OLLAMA_MODEL }),
+    });
 
-  get isProduction(): boolean {
-    return this.env.NODE_ENV === 'production';
-  }
+    this.embedding = Object.freeze({
+      model: env.EMBEDDING_MODEL,
+      dimensions: env.EMBEDDING_DIMENSIONS,
+      batchSize: env.EMBEDDING_BATCH_SIZE,
+      cacheDir: env.MODEL_CACHE_DIR,
+    });
 
-  get port(): number {
-    return this.env.API_PORT;
-  }
+    this.retrieval = Object.freeze({
+      topK: env.RETRIEVAL_TOP_K,
+      contextTokenBudget: env.CONTEXT_TOKEN_BUDGET,
+      keywordBoost: env.KEYWORD_BOOST,
+    });
 
-  get logLevel(): Env['LOG_LEVEL'] {
-    return this.env.LOG_LEVEL;
-  }
-
-  get llm() {
-    return {
-      provider: this.env.LLM_PROVIDER,
-      anthropic: {
-        apiKey: this.env.ANTHROPIC_API_KEY ?? '',
-        model: this.env.ANTHROPIC_MODEL,
-        maxTokens: this.env.ANTHROPIC_MAX_TOKENS,
-      },
-      ollama: {
-        baseUrl: this.env.OLLAMA_BASE_URL,
-        model: this.env.OLLAMA_MODEL,
-      },
-    } as const;
-  }
-
-  get embedding() {
-    return {
-      model: this.env.EMBEDDING_MODEL,
-      dimensions: this.env.EMBEDDING_DIMENSIONS,
-      batchSize: this.env.EMBEDDING_BATCH_SIZE,
-      cacheDir: this.env.MODEL_CACHE_DIR,
-    } as const;
-  }
-
-  get retrieval() {
-    return {
-      topK: this.env.RETRIEVAL_TOP_K,
-      contextTokenBudget: this.env.CONTEXT_TOKEN_BUDGET,
-      keywordBoost: this.env.KEYWORD_BOOST,
-    } as const;
-  }
-
-  get ingest() {
-    return {
-      workspaceDir: this.env.WORKSPACE_DIR,
-      maxRepoSizeBytes: this.env.MAX_REPO_SIZE_MB * 1024 * 1024,
-      maxFiles: this.env.MAX_FILES,
-      maxFileSizeBytes: this.env.MAX_FILE_SIZE_KB * 1024,
-      cloneTimeoutMs: this.env.CLONE_TIMEOUT_MS,
-      allowedHosts: this.env.ALLOWED_REPO_HOSTS.split(',')
-        .map((h) => h.trim().toLowerCase())
-        .filter(Boolean),
-    } as const;
+    this.ingest = Object.freeze({
+      workspaceDir: env.WORKSPACE_DIR,
+      maxRepoSizeBytes: env.MAX_REPO_SIZE_MB * 1024 * 1024,
+      maxFiles: env.MAX_FILES,
+      maxFileSizeBytes: env.MAX_FILE_SIZE_KB * 1024,
+      cloneTimeoutMs: env.CLONE_TIMEOUT_MS,
+      allowedHosts: Object.freeze(parseHostList(env.ALLOWED_REPO_HOSTS)),
+    });
   }
 }

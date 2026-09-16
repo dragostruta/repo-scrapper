@@ -1,4 +1,4 @@
-import { buildSystemPrompt, buildUserMessage } from './prompt';
+import { buildPromptMessages, buildSystemPrompt, buildUserMessage } from './prompt';
 
 describe('buildSystemPrompt', () => {
   it('instructs the model to treat context as untrusted data, not instructions', () => {
@@ -32,5 +32,28 @@ describe('buildUserMessage', () => {
     const message = buildUserMessage('How does X work?', '   ');
     expect(message).not.toContain('<context>');
     expect(message).toContain('No relevant context was found');
+  });
+});
+
+describe('conversation history in the prompt', () => {
+  it('includes prior turns before the context so follow-ups resolve', () => {
+    const message = buildUserMessage('and where is it called?', 'function login() {}', [
+      { question: 'How does login work?', answer: 'It checks the password.' },
+    ]);
+    expect(message.indexOf('Q: How does login work?')).toBeLessThan(message.indexOf('<context>'));
+    expect(message).toContain('A: It checks the password.');
+    expect(message.trim().endsWith('Question: and where is it called?')).toBe(true);
+  });
+
+  it('adds no history block for the first question', () => {
+    expect(buildUserMessage('q', 'ctx')).not.toContain('Conversation so far');
+  });
+});
+
+describe('buildPromptMessages', () => {
+  it('combines the fixed system prompt with the user message', () => {
+    const messages = buildPromptMessages({ question: 'q', contextText: 'ctx' });
+    expect(messages.system).toBe(buildSystemPrompt());
+    expect(messages.user).toBe(buildUserMessage('q', 'ctx', []));
   });
 });

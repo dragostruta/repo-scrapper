@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { EmbeddingModule } from '../embedding/embedding.module';
-import { ChunkRepository } from './chunk-repository.service';
+import { PersistenceModule } from '../persistence/persistence.module';
 import { RetrievalService } from './retrieval.service';
 
 @Module({
-  imports: [EmbeddingModule],
-  providers: [ChunkRepository, RetrievalService],
-  exports: [ChunkRepository, RetrievalService],
+  imports: [EmbeddingModule, PersistenceModule],
+  providers: [RetrievalService],
+  exports: [RetrievalService],
 })
 export class RetrievalModule {}

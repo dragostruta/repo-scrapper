@@ -203,6 +203,9 @@ multi-tenant server, which this is not yet.
 remote service. Both transports over the same orchestrator is a small change
 when it is needed.
 
+**Update.** The transport stayed stdio; where the server gets its data
+changed - see D14.
+
 ---
 
 ## D11 - Test depth: three layers, no live API calls
@@ -268,3 +271,79 @@ was a worse use of a 2-3 day deadline than just continuing to build.
 **Cost.** No first-hand data on whether that framework would have helped.
 Honest, rather than a checklist of tools installed without evaluation - which
 is exactly what the assignment says it wants more than a long tool list.
+
+---
+
+## D14 - The MCP server is a separate process that calls the HTTP API
+
+**Decision.** `apps/mcp` is its own small package: a stdio MCP server whose
+tools call the running API over HTTP, rather than a second entry point inside
+`apps/api` that boots the Nest application context and calls the
+orchestrators in-process (what D10 originally assumed).
+
+**Why.** The in-process version sounds more direct but is worse to actually
+use. Claude Code spawns the server on the host, not in Docker, so an
+in-process server would need its own `DATABASE_URL`, would download and load
+the embedding model a second time, and would need a _different_
+`OLLAMA_BASE_URL` from the API container (`localhost` on the host vs.
+`ollama` inside the compose network) - three ways to misconfigure it. It
+would also share pino's stdout with the MCP protocol stream, which corrupts
+the session on the first log line. Over HTTP, the server needs one optional
+setting, starts in milliseconds, can't reach the database at all, and every
+guardrail (validation, error mapping, scoping) applies to Claude exactly as
+it does to the browser, because it is the same endpoints.
+
+**What it added to the API.** One retrieval-only endpoint,
+`POST /repositories/:id/search`. When the client is Claude, routing a
+question through our own (often small, local) LLM loses information; handing
+back the ranked code lets the stronger model do the reasoning. `ask` is still
+exposed for a quick grounded answer.
+
+**Cost.** The API has to be running for any tool to work (every tool says so
+and how to start it), and each call pays an HTTP hop - negligible next to
+embedding and generation time.
+
+---
+
+## D15 - Domain errors instead of HTTP exceptions in services
+
+**Decision.** Services throw classes from `common/errors/domain-errors.ts`
+(`RepositoryNotFoundError`, `LlmUnavailableError`, ...) that carry a `kind`
+but no status code. `AllExceptionsFilter` maps kinds to HTTP statuses in one
+table.
+
+**Why.** Services previously threw Nest's `NotFoundException` and friends,
+so the domain knew it was being served over HTTP, and a mistake like reusing
+`RepositoryTooLargeError` (413) for a failed clone went unnoticed because the
+status was chosen far from where it mattered. With one mapping table, adding
+another adapter (a CLI, a queue worker) means mapping kinds once rather than
+catching framework exceptions everywhere.
+
+**Cost.** One more small file and one lookup table to keep in sync with the
+error classes - enforced by a test that covers every kind.
+
+---
+
+## D16 - Tests at the seams that actually break
+
+**Decision.** On top of D11's three layers: unit tests for every service with
+fakes injected at constructor boundaries (the refactor that introduced
+`GitClient`, the stores and injectable LLM transports exists largely to make
+this possible), HTTP contract tests that boot the real Nest pipeline with
+faked orchestrators, Vitest + Testing Library for the web app, and MCP tests
+that go through the real protocol in memory and over stdio against the built
+binary.
+
+**Why.** Every bug found while writing these sat in an edge case or at a
+seam that the original three layers never exercised: a one-line chunk window
+that looped forever on minified code, a temp directory leaked when
+`git rev-parse` failed after a clone, a polling interval restarted by a new
+callback identity on every render, and a question that could be submitted
+twice while the first was still pending. The HTTP contract tests in
+particular pin every status code and error body without needing Postgres,
+so they run everywhere in seconds.
+
+**Cost.** More test code than application code, and fakes that must be kept
+honest - they return promises where the real stores do, for example, which
+one test initially got wrong. DB-backed e2e tests still need Postgres, so a
+laptop without Docker running only gets the fast layers.
