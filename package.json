@@ -22,7 +22,8 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "setup": "bash scripts/setup.sh",
-    "llm:switch": "bash scripts/switch-llm.sh"
+    "llm:switch": "bash scripts/switch-llm.sh",
+    "docker:clean": "docker image prune -f && docker builder prune -f --filter unused-for=168h"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
