@@ -19,7 +19,9 @@
     "dev:web": "npm run dev --workspace=@app/web",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "setup": "bash scripts/setup.sh",
+    "llm:switch": "bash scripts/switch-llm.sh"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
