@@ -78,9 +78,12 @@ function segmentChars(segment: RawSegment, lines: string[]): number {
   return chars;
 }
 
-/** Folds any segment under MIN_CHUNK_CHARS into its neighbour, preferring to
- * merge forward (into what follows) so a symbol name introduced by e.g. a
- * decorator or comment block stays attached to the code it describes. */
+/** Folds any segment under MIN_CHUNK_CHARS into the segment before it
+ * (extending that kept segment's range), so a symbol name introduced by e.g. a
+ * decorator or comment block stays attached to the code it describes. A small
+ * *leading* segment - nothing has been kept yet - has no predecessor to merge
+ * into and survives as its own small chunk; in practice that is just a short
+ * top-of-file import block, so it is left as-is rather than special-cased. */
 function mergeSmallSegments(segments: RawSegment[], lines: string[]): RawSegment[] {
   const out: RawSegment[] = [];
 
@@ -102,6 +105,9 @@ function mergeSmallSegments(segments: RawSegment[], lines: string[]): RawSegment
   return out;
 }
 
+/** A segment that fits becomes one chunk; an oversized one (e.g. a 500-line
+ * function) is split into overlapping windows that all keep the parent
+ * symbol's name (D5). */
 function materialiseSegment(segment: RawSegment, lines: string[]): ChunkCandidate[] {
   const content = lines.slice(segment.startLine - 1, segment.endLine).join('\n');
   if (content.trim().length === 0) return [];
@@ -110,8 +116,6 @@ function materialiseSegment(segment: RawSegment, lines: string[]): ChunkCandidat
     return [{ content, startLine: segment.startLine, endLine: segment.endLine, symbol: segment.symbol }];
   }
 
-  // Oversized symbol (e.g. a 500-line function): split into overlapping
-  // windows, all keeping the parent symbol name (D5).
   return chunkByLines(content, segment.symbol).map((chunk) => ({
     ...chunk,
     startLine: chunk.startLine + segment.startLine - 1,

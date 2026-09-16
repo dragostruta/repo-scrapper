@@ -5,7 +5,8 @@ import { CHUNK_OVERLAP_RATIO, type ChunkCandidate, TARGET_CHUNK_CHARS } from './
  * overlap so a boundary landing mid-thought still has surrounding context.
  * Used directly for languages with no tree-sitter grammar, and internally by
  * the tree-sitter chunker to split any single symbol too large to be one
- * chunk (D5).
+ * chunk (D5). Always emits at least one line per chunk, even an oversized
+ * one - a 2000-character minified line becomes one chunk, not zero.
  */
 export function chunkByLines(text: string, symbol: string | null = null): ChunkCandidate[] {
   const lines = text.split('\n');
@@ -21,9 +22,6 @@ export function chunkByLines(text: string, symbol: string | null = null): ChunkC
       chars += lines[end].length + 1;
       end++;
     }
-    // Always include at least one line, even if it alone exceeds the target -
-    // a 2000-character minified line should still become exactly one chunk,
-    // not zero.
     if (end === start) end = start + 1;
 
     chunks.push({

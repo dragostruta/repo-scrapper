@@ -34,9 +34,7 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new AllExceptionsFilter(logger));
   app.enableShutdownHooks();
 
-  // A repository stuck in CLONING/INDEXING after a restart cannot still be
-  // running (D8: no job queue, indexing is in-process) - mark it FAILED so
-  // it is retryable instead of silently hanging the UI forever.
+  // A restart can leave rows stuck mid-index (D8: no queue) - sweepOrphaned() retries them.
   await app.get(IngestOrchestratorService).sweepOrphaned();
 
   await app.listen(config.port, '0.0.0.0');

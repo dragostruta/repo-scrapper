@@ -1,10 +1,6 @@
 import { join } from 'node:path';
 import type { TSParser } from './tree-sitter-node';
 
-// This file compiles to CommonJS (see tsconfig.json), so the ambient
-// `require` is already available - no need for node:module's createRequire,
-// which also collides with the ambient identifier under TS's CJS types.
-
 /**
  * tree-sitter grammars ship as prebuilt WASM (via the `tree-sitter-wasms`
  * package) so nothing needs a native compiler toolchain on the machine
@@ -17,6 +13,9 @@ import type { TSParser } from './tree-sitter-node';
  * is caught by the caller (TreeSitterChunker) and treated as "no grammar
  * available", which falls back to line-based chunking (D5). Nothing upstream
  * of this file should ever throw past that boundary.
+ *
+ * Compiles to CommonJS (see tsconfig.json), so the ambient `require` used
+ * below is already available - no need for node:module's createRequire.
  */
 
 const WASM_FILE_BY_LANGUAGE: Record<string, string> = {
@@ -44,13 +43,15 @@ async function getParserModule(): Promise<typeof import('web-tree-sitter')> {
   return parserModulePromise;
 }
 
+/** tree-sitter-wasms publishes its grammars under out/<file>.wasm relative to the package root. */
 function resolveWasmPath(fileName: string): string {
-  // tree-sitter-wasms publishes its grammars under out/<file>.wasm relative
-  // to the package root.
   const pkgJsonPath = require.resolve('tree-sitter-wasms/package.json');
   return join(pkgJsonPath, '..', 'out', fileName);
 }
 
+/** Returns null - never throws - for any grammar failure; caller falls back
+ * to line-based chunking. Not logged here: TreeSitterChunker logs a single
+ * warning the first time this happens per language. */
 export async function loadParser(language: string): Promise<TSParser | null> {
   const cached = languageCache.get(language);
   if (cached) return cached;
@@ -78,9 +79,6 @@ export async function loadParser(language: string): Promise<TSParser | null> {
       parser.setLanguage(grammar);
       return parser;
     } catch {
-      // Grammar unavailable for any reason - caller falls back to line-based
-      // chunking. Deliberately not logged as an error here; TreeSitterChunker
-      // logs a single warning the first time this happens per language.
       return null;
     }
   })();

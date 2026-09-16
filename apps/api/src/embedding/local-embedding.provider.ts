@@ -3,10 +3,8 @@ import { AppConfig } from '../config/app-config';
 import { AppLogger } from '../common/logging/logger.service';
 import type { EmbeddingProvider } from './embedding-provider';
 
-// transformers.js is ESM-only; the API build is CommonJS, so it has to be
-// brought in with a dynamic import rather than a top-level one. The pipeline
-// itself is untyped from our side (no first-party types ship for the pipeline
-// return value), hence the narrow `unknown` surface below.
+/** transformers.js is ESM-only and untyped from our side - dynamically
+ * imported below, cast through this narrow `unknown` surface. */
 type FeatureExtractionPipeline = (
   texts: string[],
   options: { pooling: 'mean'; normalize: true },
@@ -32,9 +30,9 @@ export class LocalEmbeddingProvider implements EmbeddingProvider, OnModuleInit {
     this.logger = logger.forContext('LocalEmbeddingProvider');
   }
 
+  /** Warms the model at boot so the first real request isn't the one that
+   * pays the download/load latency. */
   async onModuleInit(): Promise<void> {
-    // Warm the model at boot rather than on the first request, so the first
-    // real user isn't the one who pays the download/load latency.
     await this.getPipeline();
   }
 
@@ -59,6 +57,9 @@ export class LocalEmbeddingProvider implements EmbeddingProvider, OnModuleInit {
     return this.pipelinePromise;
   }
 
+  /** dtype left unset - transformers.js v3+ replaced the old boolean
+   * `quantized` option with `dtype`; the library's own default is safer than
+   * guessing a literal that might not match the installed version. */
   private async loadPipeline(): Promise<FeatureExtractionPipeline> {
     const startedAt = Date.now();
     const { pipeline, env } = await import('@huggingface/transformers');
@@ -70,11 +71,6 @@ export class LocalEmbeddingProvider implements EmbeddingProvider, OnModuleInit {
     const model = this.config.embedding.model;
     this.logger.info({ model }, 'loading embedding model (first call may download it)');
 
-    // transformers.js v3+ replaced the old boolean `quantized` option with a
-    // `dtype` choice (fp32/fp16/q8/...). Leaving it unset takes the library's
-    // own default for this model rather than guessing a literal that might
-    // not match the installed version - worth tuning later for speed/size,
-    // not worth a broken build now.
     const extractor = (await pipeline('feature-extraction', model)) as unknown as FeatureExtractionPipeline;
 
     this.logger.info({ model, ms: Date.now() - startedAt }, 'embedding model ready');
