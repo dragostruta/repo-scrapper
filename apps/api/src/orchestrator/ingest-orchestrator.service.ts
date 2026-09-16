@@ -1,208 +1,115 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { RepositorySummary } from '@app/shared';
-import { PrismaService } from '../prisma/prisma.service';
 import { AppConfig } from '../config/app-config';
 import { AppLogger } from '../common/logging/logger.service';
+import { RepositoryNotFoundError } from '../common/errors/domain-errors';
+import { errorMessage } from '../common/errors/error-message';
 import { GithubClonerService } from '../ingest/github-cloner.service';
-import { FileWalkerService } from '../ingest/file-walker.service';
 import { parseGithubUrl, type ParsedGithubRepo } from '../ingest/parse-github-url';
-import { ChunkerService } from '../chunking/chunker.service';
-import { EMBEDDING_PROVIDER, type EmbeddingProvider } from '../embedding/embedding-provider';
-import { ChunkRepository, type ChunkToInsert } from '../retrieval/chunk-repository.service';
-import { toRepositorySummary } from './repository-mapper';
+import { RepositoryStore } from '../persistence/repository.store';
+import { RepositoryIndexerService } from './repository-indexer.service';
+
+/** Stored until the clone reports the real commit sha. */
+export const PENDING_REVISION = 'pending';
+
+export const INTERRUPTED_MESSAGE = 'Indexing was interrupted by a server restart.';
 
 /**
- * Owns the ingest side of the pipeline end to end: parse -> cache check ->
- * clone -> walk -> chunk -> embed -> persist -> INDEXED. This is the one
- * place that sequence exists; the HTTP controller and (later) the MCP
- * adapter both call ingestGithubRepo and nothing else.
+ * Entry point for adding and reading repositories - the one thing the HTTP
+ * controller (and any other adapter) calls. It decides *whether* to index;
+ * RepositoryIndexerService does the indexing.
  *
- * Indexing runs as a detached background task (D8: no queue in v1) - the
- * caller gets the repository row back in PENDING/CLONING immediately and
- * polls getRepository() for status. An API restart mid-index leaves the row
- * stuck; sweepOrphaned() (called at boot) marks those FAILED so they are
- * retryable instead of silently stuck forever. (source, name, revision) is
- * unique, so ingestGithubRepo() re-runs indexing on an existing FAILED row
- * for that revision rather than creating a duplicate.
+ * (source, name, revision) is unique, so the same repo at the same commit is
+ * indexed once: an INDEXED match is returned as a cache hit, an in-flight
+ * match is returned as-is, and a FAILED match is retried in place.
  */
 @Injectable()
 export class IngestOrchestratorService {
   private readonly logger;
 
   constructor(
-    private readonly prisma: PrismaService,
     private readonly config: AppConfig,
     private readonly cloner: GithubClonerService,
-    private readonly walker: FileWalkerService,
-    private readonly chunker: ChunkerService,
-    @Inject(EMBEDDING_PROVIDER) private readonly embeddings: EmbeddingProvider,
-    private readonly chunkRepository: ChunkRepository,
+    private readonly indexer: RepositoryIndexerService,
+    private readonly repositories: RepositoryStore,
     logger: AppLogger,
   ) {
     this.logger = logger.forContext('IngestOrchestratorService');
   }
 
+  /** Returns immediately; indexing continues in the background (D8). */
   async ingestGithubRepo(rawUrl: string): Promise<RepositorySummary> {
-    const parsed = parseGithubUrl(rawUrl, this.config.ingest.allowedHosts);
-    const probableSha = await this.cloner.resolveHeadSha(parsed.cloneUrl);
+    const repo = parseGithubUrl(rawUrl, this.config.ingest.allowedHosts);
+    const headSha = await this.cloner.resolveHeadSha(repo.cloneUrl);
+    const existing = headSha
+      ? await this.repositories.findGithubRevision(repo.name, headSha)
+      : null;
 
-    if (probableSha) {
-      const existing = await this.prisma.repository.findUnique({
-        where: {
-          source_name_revision: { source: 'GITHUB', name: parsed.name, revision: probableSha },
-        },
-      });
-
-      if (existing) {
-        if (existing.status === 'INDEXED') {
-          this.logger.info(
-            { repo: parsed.name, revision: probableSha },
-            'cache hit - already indexed',
-          );
-          return toRepositorySummary(existing);
-        }
-
-        if (existing.status === 'FAILED') {
-          // Retry in place - a plain create() below would violate the unique constraint.
-          const retried = await this.prisma.repository.update({
-            where: { id: existing.id },
-            data: { status: 'CLONING', error: null },
-          });
-          this.startIndexing(retried.id, parsed);
-          return toRepositorySummary(retried);
-        }
-
-        // Already PENDING/CLONING/INDEXING - an ingest is in flight; hand back that row.
-        return toRepositorySummary(existing);
-      }
-    }
-
-    // Concurrent ingests before a real revision is known can each create their
-    // own PENDING row - acknowledged, not solved (README known limitations).
-    const repository = await this.prisma.repository.create({
-      data: {
-        source: 'GITHUB',
-        url: parsed.cloneUrl,
-        name: parsed.name,
-        revision: probableSha ?? 'pending',
-        status: 'CLONING',
-      },
-    });
-
-    this.startIndexing(repository.id, parsed);
-
-    return toRepositorySummary(repository);
+    return existing ? this.reuseExisting(existing, repo) : this.createAndIndex(repo, headSha);
   }
 
-  /** Fire-and-forget indexing (D8: no queue in v1) - shared by the fresh-row
-   * and retry-existing-row paths above so both get the same "never let a
-   * rejection escape uncaught" guard. */
-  private startIndexing(repositoryId: string, parsed: ParsedGithubRepo): void {
-    // Guards only against something throwing outside runIndexing's own try/catch,
-    // which already persists FAILED status internally.
-    void this.runIndexing(repositoryId, parsed).catch((err: unknown) => {
-      this.logger.error(
-        { repositoryId, err: err instanceof Error ? err.message : String(err) },
-        'indexing rejected unexpectedly',
-      );
-    });
+  async getRepository(id: string): Promise<RepositorySummary> {
+    const repository = await this.repositories.findById(id);
+    if (!repository) throw new RepositoryNotFoundError(id);
+    return repository;
   }
 
-  async getRepository(id: string): Promise<RepositorySummary | null> {
-    const repo = await this.prisma.repository.findUnique({ where: { id } });
-    return repo ? toRepositorySummary(repo) : null;
+  listRepositories(): Promise<RepositorySummary[]> {
+    return this.repositories.list();
   }
 
-  async listRepositories(): Promise<RepositorySummary[]> {
-    const repos = await this.prisma.repository.findMany({ orderBy: { createdAt: 'desc' } });
-    return repos.map(toRepositorySummary);
-  }
-
-  /** Called once at boot (see main.ts). A row left in CLONING/INDEXING after
-   * a restart cannot still be running - mark it FAILED so it shows up as
-   * retryable instead of hanging the UI forever. */
-  async sweepOrphaned(): Promise<void> {
-    const { count } = await this.prisma.repository.updateMany({
-      where: { status: { in: ['CLONING', 'INDEXING'] } },
-      data: { status: 'FAILED', error: 'Indexing was interrupted by a server restart.' },
-    });
+  /** Called once at boot: a row still CLONING/INDEXING can't really be
+   * running after a restart, so mark it FAILED and therefore retryable. */
+  async recoverInterruptedIndexing(): Promise<void> {
+    const count = await this.repositories.failInProgress(INTERRUPTED_MESSAGE);
     if (count > 0) {
-      this.logger.warn({ count }, 'marked orphaned in-progress repositories as FAILED on boot');
+      this.logger.warn({ count }, 'marked interrupted repositories as FAILED on boot');
     }
   }
 
-  private async runIndexing(repositoryId: string, parsed: ParsedGithubRepo): Promise<void> {
-    let clonedDir: string | null = null;
-
-    try {
-      const cloned = await this.cloner.clone(parsed);
-      clonedDir = cloned.dir;
-
-      await this.prisma.repository.update({
-        where: { id: repositoryId },
-        data: { revision: cloned.revision, status: 'INDEXING' },
-      });
-
-      const files = await this.walker.walk(cloned.dir);
-
-      // No-op on a fresh row; makes re-running a FAILED repository safe too.
-      await this.chunkRepository.deleteForRepository(repositoryId);
-
-      let chunkCount = 0;
-      for (const file of files) {
-        const candidates = await this.chunker.chunkFile(file.content, file.language);
-        if (candidates.length === 0) continue;
-
-        const vectors = await this.embeddings.embed(candidates.map((c) => c.content));
-        const toInsert: ChunkToInsert[] = candidates.map((c, i) => ({
-          filePath: file.relativePath,
-          language: file.language,
-          symbol: c.symbol,
-          startLine: c.startLine,
-          endLine: c.endLine,
-          content: c.content,
-          tokenCount: Math.ceil(c.content.length / 4),
-          embedding: vectors[i],
-        }));
-
-        await this.chunkRepository.insertMany(repositoryId, toInsert);
-        chunkCount += toInsert.length;
-      }
-
-      await this.prisma.repository.update({
-        where: { id: repositoryId },
-        data: {
-          status: 'INDEXED',
-          fileCount: files.length,
-          chunkCount,
-          indexedAt: new Date(),
-          error: null,
-        },
-      });
-
-      this.logger.info({ repositoryId, fileCount: files.length, chunkCount }, 'indexing completed');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error({ repositoryId, err: message }, 'indexing failed');
-      await this.prisma.repository
-        .update({
-          where: { id: repositoryId },
-          data: { status: 'FAILED', error: message.slice(0, 2000) },
-        })
-        .catch(() => undefined);
-    } finally {
-      if (clonedDir) await this.cloner.cleanup(clonedDir).catch(() => undefined);
+  private async reuseExisting(
+    existing: RepositorySummary,
+    repo: ParsedGithubRepo,
+  ): Promise<RepositorySummary> {
+    if (existing.status === 'FAILED') {
+      const retried = await this.repositories.markCloning(existing.id);
+      this.indexInBackground(retried.id, repo);
+      return retried;
     }
+    if (existing.status === 'INDEXED') {
+      this.logger.info(
+        { repo: repo.name, revision: existing.revision },
+        'cache hit - already indexed',
+      );
+    }
+    return existing;
   }
-}
 
-/** Small helper so the controller can 404 cleanly without repeating the
- * findRepository-or-throw pattern. */
-export async function requireRepository(
-  service: IngestOrchestratorService,
-  id: string,
-): Promise<RepositorySummary> {
-  const repo = await service.getRepository(id);
-  if (!repo) throw new NotFoundException(`Repository ${id} not found`);
-  return repo;
+  private async createAndIndex(
+    repo: ParsedGithubRepo,
+    headSha: string | null,
+  ): Promise<RepositorySummary> {
+    // Two concurrent ingests before a sha is known can each create a row -
+    // acknowledged in the README's known limitations, not solved here.
+    const created = await this.repositories.createGithub({
+      url: repo.cloneUrl,
+      name: repo.name,
+      revision: headSha ?? PENDING_REVISION,
+    });
+    this.indexInBackground(created.id, repo);
+    return created;
+  }
+
+  /** The indexer records its own failures; this only guards against a bug
+   * escaping it as an unhandled rejection. */
+  private indexInBackground(repositoryId: string, repo: ParsedGithubRepo): void {
+    void this.indexer
+      .index(repositoryId, repo)
+      .catch((err: unknown) =>
+        this.logger.error(
+          { repositoryId, err: errorMessage(err) },
+          'indexing rejected unexpectedly',
+        ),
+      );
+  }
 }

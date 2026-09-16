@@ -6,11 +6,9 @@ import { chunkByLines } from './line-chunker';
 import { chunkWithTreeSitter } from './tree-sitter-chunker';
 
 /**
- * Single entry point for turning one file's text into chunks. Tries the
- * code-aware path for languages with a grammar, falls back to line-based
- * chunking for everything else - including a tree-sitter language whose
- * grammar failed to load, which is why the fallback path is exercised even
- * when a language "should" be supported (D5).
+ * Single entry point for turning one file into chunks: symbol-aware for
+ * languages with a grammar, line-based for everything else - including a
+ * supported language whose grammar failed to load (D5).
  */
 @Injectable()
 export class ChunkerService {
@@ -25,16 +23,18 @@ export class ChunkerService {
     if (TREE_SITTER_LANGUAGES.has(language)) {
       const chunks = await chunkWithTreeSitter(content, language);
       if (chunks) return chunks;
-
-      if (!this.warnedLanguages.has(language)) {
-        this.warnedLanguages.add(language);
-        this.logger.warn(
-          { language },
-          'tree-sitter grammar unavailable for this language - falling back to line-based chunking',
-        );
-      }
+      this.warnGrammarUnavailableOnce(language);
     }
-
     return chunkByLines(content, null);
+  }
+
+  /** One warning per language per process, not one per file. */
+  private warnGrammarUnavailableOnce(language: string): void {
+    if (this.warnedLanguages.has(language)) return;
+    this.warnedLanguages.add(language);
+    this.logger.warn(
+      { language },
+      'tree-sitter grammar unavailable - falling back to line-based chunking',
+    );
   }
 }

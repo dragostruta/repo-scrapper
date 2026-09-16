@@ -1,17 +1,14 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import type { AskResponse, ChunkExcerpt, RepositorySummary } from '@app/shared';
-import {
-  IngestOrchestratorService,
-  requireRepository,
-} from '../orchestrator/ingest-orchestrator.service';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import type { AskResponse, ChunkExcerpt, RepositorySummary, SearchResponse } from '@app/shared';
+import { IngestOrchestratorService } from '../orchestrator/ingest-orchestrator.service';
 import { QueryOrchestratorService } from '../orchestrator/query-orchestrator.service';
-import { CreateRepositoryDto } from './dto/create-repository.dto';
 import { AskDto } from './dto/ask.dto';
+import { CreateRepositoryDto } from './dto/create-repository.dto';
+import { SearchDto } from './dto/search.dto';
 
 /**
- * Thin HTTP adapter over the orchestrator (see architecture note in README).
- * No business logic lives here - every method is parse-DTO, call
- * orchestrator, return its result.
+ * Thin HTTP adapter: every handler validates its input (via the DTO) and
+ * delegates to an orchestrator. No business logic lives here.
  */
 @Controller('repositories')
 export class RepositoriesController {
@@ -32,12 +29,18 @@ export class RepositoriesController {
 
   @Get(':id')
   get(@Param('id') id: string): Promise<RepositorySummary> {
-    return requireRepository(this.ingest, id);
+    return this.ingest.getRepository(id);
   }
 
   @Post(':id/ask')
   ask(@Param('id') id: string, @Body() dto: AskDto): Promise<AskResponse> {
     return this.query.ask(id, dto.question, dto.history ?? []);
+  }
+
+  @Post(':id/search')
+  @HttpCode(HttpStatus.OK)
+  search(@Param('id') id: string, @Body() dto: SearchDto): Promise<SearchResponse> {
+    return this.query.search(id, dto.query, dto.limit);
   }
 
   @Get(':id/chunks/:chunkId')

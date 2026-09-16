@@ -1,0 +1,10 @@
+/** Readable message for anything that was thrown, including non-Error values. */
+export function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err) ?? String(err);
+  } catch {
+    return String(err);
+  }
+}

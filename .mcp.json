@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "repo-scrapper": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["apps/mcp/dist/index.js"],
+      "env": {
+        "REPO_SCRAPPER_API_URL": "${REPO_SCRAPPER_API_URL:-http://localhost:3001}"
+      }
+    }
+  }
+}

@@ -1,98 +1,61 @@
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Test } from '@nestjs/testing';
-import type { TestingModule } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { AppConfigModule } from '../src/config/config.module';
 import { LoggingModule } from '../src/common/logging/logging.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { IngestModule } from '../src/ingest/ingest.module';
 import { FileWalkerService } from '../src/ingest/file-walker.service';
-import { ChunkingModule } from '../src/chunking/chunking.module';
-import { ChunkerService } from '../src/chunking/chunker.service';
-import { EmbeddingModule } from '../src/embedding/embedding.module';
-import { EMBEDDING_PROVIDER, type EmbeddingProvider } from '../src/embedding/embedding-provider';
-import { RetrievalModule } from '../src/retrieval/retrieval.module';
-import { ChunkRepository, type ChunkToInsert } from '../src/retrieval/chunk-repository.service';
+import { OrchestratorModule } from '../src/orchestrator/orchestrator.module';
+import { FileIndexerService } from '../src/orchestrator/file-indexer.service';
+import { RepositoryStore } from '../src/persistence/repository.store';
+import { RetrievalService } from '../src/retrieval/retrieval.service';
 
-// This test needs a real Postgres + pgvector (see docker-compose.yml's `db`
-// service) - `npm test` loads DATABASE_URL from the repo-root .env for a
-// local run; CI injects it directly as a service container (see D11). This
-// test never touches the LLM, but AppConfig validates LLM_PROVIDER /
-// ANTHROPIC_API_KEY unconditionally at construction, so it's forced to
-// 'stub' here rather than left to whatever a developer's local .env has.
+// Needs a real Postgres + pgvector (docker-compose.yml's `db` service). This
+// test never calls an LLM, but AppConfig validates the provider settings at
+// construction, so it is pinned to the stub rather than whatever .env says.
 process.env.LLM_PROVIDER = 'stub';
 
 const FIXTURE_DIR = join(__dirname, 'fixtures', 'golden-repo');
+const RECALL_AT = 2;
 
 /**
- * D11's "golden-set retrieval test": ingest a tiny fixture repo through the
- * real chunking + local-embedding + pgvector pipeline (no git clone, no live
- * LLM call - FileWalkerService.walk() runs directly against the fixture
- * directory), then assert recall@2 for a handful of questions with a known
- * answer file. This is the only test that would notice a chunking or
- * retrieval change quietly making search worse - see D11's "why".
+ * D11's golden-set retrieval test: index a tiny fixture repository through
+ * the real production pipeline (walker -> FileIndexerService -> pgvector,
+ * with local embeddings), then assert recall@2 for questions with a known
+ * answer file. This is the test that notices when a chunking or retrieval
+ * change quietly makes search worse.
  */
 describe('golden-set retrieval', () => {
   let moduleRef: TestingModule;
   let prisma: PrismaService;
-  let walker: FileWalkerService;
-  let chunker: ChunkerService;
-  let embeddings: EmbeddingProvider;
-  let chunkRepository: ChunkRepository;
+  let retrieval: RetrievalService;
   let repositoryId: string;
 
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
-      imports: [
-        AppConfigModule,
-        LoggingModule,
-        PrismaModule,
-        IngestModule,
-        ChunkingModule,
-        EmbeddingModule,
-        RetrievalModule,
-      ],
+      imports: [AppConfigModule, LoggingModule, PrismaModule, OrchestratorModule],
     }).compile();
     await moduleRef.init();
 
     prisma = moduleRef.get(PrismaService);
-    walker = moduleRef.get(FileWalkerService);
-    chunker = moduleRef.get(ChunkerService);
-    embeddings = moduleRef.get(EMBEDDING_PROVIDER);
-    chunkRepository = moduleRef.get(ChunkRepository);
+    retrieval = moduleRef.get(RetrievalService);
+    const repositories = moduleRef.get(RepositoryStore);
 
-    const repository = await prisma.repository.create({
-      data: {
-        source: 'GITHUB',
-        url: 'https://example.invalid/golden-repo.git',
-        name: 'test/golden-repo',
-        revision: `golden-${randomUUID()}`,
-        status: 'INDEXING',
-      },
+    const repository = await repositories.createGithub({
+      url: 'https://example.invalid/golden-repo.git',
+      name: 'test/golden-repo',
+      revision: `golden-${randomUUID()}`,
     });
     repositoryId = repository.id;
 
-    const files = await walker.walk(FIXTURE_DIR);
+    const files = await moduleRef.get(FileWalkerService).walk(FIXTURE_DIR);
+    const fileIndexer = moduleRef.get(FileIndexerService);
+    let chunkCount = 0;
     for (const file of files) {
-      const candidates = await chunker.chunkFile(file.content, file.language);
-      if (candidates.length === 0) continue;
-
-      const vectors = await embeddings.embed(candidates.map((c) => c.content));
-      const toInsert: ChunkToInsert[] = candidates.map((c, i) => ({
-        filePath: file.relativePath,
-        language: file.language,
-        symbol: c.symbol,
-        startLine: c.startLine,
-        endLine: c.endLine,
-        content: c.content,
-        tokenCount: Math.ceil(c.content.length / 4),
-        embedding: vectors[i],
-      }));
-      await chunkRepository.insertMany(repositoryId, toInsert);
+      chunkCount += await fileIndexer.indexFile(repositoryId, file);
     }
-
-    await prisma.repository.update({ where: { id: repositoryId }, data: { status: 'INDEXED' } });
+    await repositories.markIndexed(repositoryId, { fileCount: files.length, chunkCount });
   });
 
   afterAll(async () => {
@@ -108,22 +71,15 @@ describe('golden-set retrieval', () => {
       question: 'How does user login work, and what happens if the password is wrong?',
       expectedFile: 'src/auth.ts',
     },
-    {
-      question: 'How do I calculate the area of a circle?',
-      expectedFile: 'src/geometry.py',
-    },
-    {
-      question: 'Does the HTTP client retry failed requests?',
-      expectedFile: 'src/http-client.ts',
-    },
+    { question: 'How do I calculate the area of a circle?', expectedFile: 'src/geometry.py' },
+    { question: 'Does the HTTP client retry failed requests?', expectedFile: 'src/http-client.ts' },
   ];
 
   it.each(GOLDEN_SET)(
-    'recall@2: retrieves $expectedFile for "$question"',
+    `recall@${RECALL_AT}: retrieves $expectedFile for "$question"`,
     async ({ question, expectedFile }) => {
-      const [queryEmbedding] = await embeddings.embed([question]);
-      const results = await chunkRepository.search(repositoryId, queryEmbedding, question, 2, 0.15);
-      expect(results.map((r) => r.filePath)).toContain(expectedFile);
+      const { chunks } = await retrieval.search(repositoryId, question, RECALL_AT);
+      expect(chunks.map((c) => c.filePath)).toContain(expectedFile);
     },
   );
 });

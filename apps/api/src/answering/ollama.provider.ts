@@ -1,60 +1,81 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { AppConfig } from '../config/app-config';
-import { AppLogger } from '../common/logging/logger.service';
+import type { AppLogger } from '../common/logging/logger.service';
+import { LlmUnavailableError } from '../common/errors/domain-errors';
+import { errorMessage } from '../common/errors/error-message';
 import type { LlmAnswerRequest, LlmProvider } from './llm-provider';
-import { buildSystemPrompt, buildUserMessage } from './prompt';
+import { buildPromptMessages } from './prompt';
+
+export interface OllamaSettings {
+  baseUrl: string;
+  model: string;
+}
 
 interface OllamaChatResponse {
   message?: { content?: string };
 }
 
-/** Talks to a local (or docker-composed) Ollama instance over its /api/chat
- * endpoint. No API key, no external network call - see the README's "Running
- * fully local" section. */
-@Injectable()
+/** Longest upstream error body echoed back to the user. */
+const MAX_ERROR_BODY = 500;
+
+/** Request body for Ollama's non-streaming /api/chat endpoint. */
+export function buildOllamaChatBody(model: string, request: LlmAnswerRequest) {
+  const { system, user } = buildPromptMessages(request);
+  return {
+    model,
+    stream: false,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+  };
+}
+
+/**
+ * Talks to a local or docker-composed Ollama over /api/chat. No API key and no
+ * external network call. `fetchFn` is injectable so tests never need a server.
+ */
 export class OllamaProvider implements LlmProvider {
   private readonly logger;
 
   constructor(
-    private readonly config: AppConfig,
+    private readonly settings: OllamaSettings,
     logger: AppLogger,
+    private readonly fetchFn: typeof fetch = fetch,
   ) {
     this.logger = logger.forContext('OllamaProvider');
   }
 
-  async answer({ question, contextText, history }: LlmAnswerRequest): Promise<string> {
-    const { baseUrl, model } = this.config.llm.ollama;
+  async answer(request: LlmAnswerRequest): Promise<string> {
+    const response = await this.postChat(request);
+    await this.assertOk(response);
+    return this.readAnswer(response);
+  }
 
-    let response: Response;
+  private async postChat(request: LlmAnswerRequest): Promise<Response> {
+    const { baseUrl, model } = this.settings;
     try {
-      response = await fetch(`${baseUrl}/api/chat`, {
+      return await this.fetchFn(`${baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          stream: false,
-          messages: [
-            { role: 'system', content: buildSystemPrompt() },
-            { role: 'user', content: buildUserMessage(question, contextText, history) },
-          ],
-        }),
+        body: JSON.stringify(buildOllamaChatBody(model, request)),
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error({ baseUrl, model, err: message }, 'could not reach ollama');
-      throw new ServiceUnavailableException(
+      this.logger.error({ baseUrl, model, err: errorMessage(err) }, 'could not reach ollama');
+      throw new LlmUnavailableError(
         `Could not reach Ollama at ${baseUrl}. Is it running (\`ollama serve\`) and is ` +
           `"${model}" pulled (\`ollama pull ${model}\`)?`,
       );
     }
+  }
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new ServiceUnavailableException(
-        `Ollama returned ${response.status}: ${body.slice(0, 500)}`,
-      );
-    }
+  private async assertOk(response: Response): Promise<void> {
+    if (response.ok) return;
+    const body = await response.text().catch(() => '');
+    throw new LlmUnavailableError(
+      `Ollama returned ${response.status}: ${body.slice(0, MAX_ERROR_BODY)}`,
+    );
+  }
 
+  private async readAnswer(response: Response): Promise<string> {
     const data = (await response.json()) as OllamaChatResponse;
     return data.message?.content ?? '';
   }

@@ -32,11 +32,14 @@ const EXTENSION_LANGUAGE: Record<string, string> = {
  * else - including languages we can name above - gets line-based chunking. */
 export const TREE_SITTER_LANGUAGES = new Set(['typescript', 'tsx', 'javascript', 'python']);
 
-export function detectLanguage(filePath: string): string {
+/** Lower-cased extension including the dot (".ts"), or '' if there is none. */
+export function extensionOf(filePath: string): string {
   const dot = filePath.lastIndexOf('.');
-  if (dot === -1) return 'plaintext';
-  const ext = filePath.slice(dot).toLowerCase();
-  return EXTENSION_LANGUAGE[ext] ?? 'plaintext';
+  return dot === -1 ? '' : filePath.slice(dot).toLowerCase();
+}
+
+export function detectLanguage(filePath: string): string {
+  return EXTENSION_LANGUAGE[extensionOf(filePath)] ?? 'plaintext';
 }
 
 const BINARY_EXTENSIONS = new Set([
@@ -77,6 +80,5 @@ const BINARY_EXTENSIONS = new Set([
 ]);
 
 export function looksBinary(filePath: string): boolean {
-  const dot = filePath.lastIndexOf('.');
-  return dot !== -1 && BINARY_EXTENSIONS.has(filePath.slice(dot).toLowerCase());
+  return BINARY_EXTENSIONS.has(extensionOf(filePath));
 }

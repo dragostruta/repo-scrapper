@@ -1,5 +1,5 @@
-import { assembleContext } from './context-assembler';
-import type { RetrievedChunk } from './chunk-repository.service';
+import { assembleContext, formatChunk } from './context-assembler';
+import type { RetrievedChunk } from '../persistence/chunk.store';
 
 function chunk(overrides: Partial<RetrievedChunk> & { score: number }): RetrievedChunk {
   return {
@@ -59,5 +59,26 @@ describe('assembleContext', () => {
       1000,
     );
     expect(result.text).toContain('(myFunction)');
+  });
+});
+
+describe('formatChunk', () => {
+  it('heads the content with file, line range and symbol', () => {
+    expect(
+      formatChunk(
+        chunk({
+          score: 1,
+          filePath: 'a/b.py',
+          startLine: 3,
+          endLine: 9,
+          symbol: 'area',
+          content: 'pass',
+        }),
+      ),
+    ).toBe('--- a/b.py:3-9 (area) ---\npass');
+  });
+
+  it('omits the symbol when there is none', () => {
+    expect(formatChunk(chunk({ score: 1, content: 'x' }))).toBe('--- src/a.ts:1-1 ---\nx');
   });
 });

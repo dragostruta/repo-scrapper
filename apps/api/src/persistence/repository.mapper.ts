@@ -1,9 +1,7 @@
 import type { Repository } from '@prisma/client';
 import type { RepositorySummary } from '@app/shared';
 
-/** Maps the Prisma row to the shape both the web client and (later) the MCP
- * adapter consume - keeps @prisma/client's generated type out of everything
- * downstream of the orchestrator. */
+/** Prisma row -> the public shape every client (web, MCP) consumes. */
 export function toRepositorySummary(repo: Repository): RepositorySummary {
   return {
     id: repo.id,

@@ -1,19 +1,9 @@
-import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
+import type { HealthResponse } from '@app/shared';
 import { AppConfig } from '../config/app-config';
 import { PrismaService } from '../prisma/prisma.service';
 
-interface HealthResponse {
-  status: 'ok' | 'degraded';
-  uptimeSeconds: number;
-  checks: {
-    database: 'up' | 'down';
-  };
-  config: {
-    llmProvider: string;
-    embeddingModel: string;
-  };
-}
-
+/** Liveness plus the two settings most worth confirming on a running instance. */
 @Controller('health')
 export class HealthController {
   constructor(
@@ -21,8 +11,8 @@ export class HealthController {
     private readonly config: AppConfig,
   ) {}
 
+  /** Always 200: a down database reports "degraded" in the body instead of failing the probe. */
   @Get()
-  @HttpCode(HttpStatus.OK)
   async check(): Promise<HealthResponse> {
     const database = (await this.prisma.ping()) ? 'up' : 'down';
     return {

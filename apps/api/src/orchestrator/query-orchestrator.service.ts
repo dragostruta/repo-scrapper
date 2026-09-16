@@ -1,31 +1,36 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { AskResponse, ChunkExcerpt, Citation, ConversationTurn } from '@app/shared';
-import { PrismaService } from '../prisma/prisma.service';
+import { Inject, Injectable } from '@nestjs/common';
+import type { AskResponse, ChunkExcerpt, ConversationTurn, SearchResponse } from '@app/shared';
 import { AppLogger } from '../common/logging/logger.service';
 import { currentTraceId, newTraceId } from '../common/logging/trace-context';
-import { RetrievalService } from '../retrieval/retrieval.service';
+import {
+  ChunkNotFoundError,
+  RepositoryNotFoundError,
+  RepositoryNotReadyError,
+} from '../common/errors/domain-errors';
+import { errorMessage } from '../common/errors/error-message';
+import { startTimer } from '../common/timing';
 import { LLM_PROVIDER, type LlmProvider } from '../answering/llm-provider';
-import { ChunkRepository } from '../retrieval/chunk-repository.service';
+import { ChunkStore, type RetrievedChunk } from '../persistence/chunk.store';
+import { QueryLogStore } from '../persistence/query-log.store';
+import { RepositoryStore } from '../persistence/repository.store';
+import { buildRetrievalQuery } from '../retrieval/retrieval-query';
+import { RetrievalService } from '../retrieval/retrieval.service';
+import { toChunkExcerpt, toCitation, toSearchHit } from './chunk.mappers';
 
 /**
- * Owns the query side of the pipeline: load the repository, retrieve +
- * assemble context, call the LLM, log the retrieval trace, return the
- * answer. This is the single method both the HTTP controller and the future
- * MCP `ask_about_repository` tool call - see the architecture note in
- * README about the orchestrator being the one thing both adapters share.
- *
- * The client supplies its own conversation history with each call rather
- * than this service holding any - keeps the server stateless like the rest
- * of the pipeline, at the cost of the client having to resend it (see D9).
+ * Owns the question side of the pipeline: check the repository is ready,
+ * retrieve context, generate an answer, record the trace. The client sends
+ * its own conversation history each time, so this stays stateless (D9).
  */
 @Injectable()
 export class QueryOrchestratorService {
   private readonly logger;
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly repositories: RepositoryStore,
     private readonly retrieval: RetrievalService,
-    private readonly chunkRepository: ChunkRepository,
+    private readonly chunks: ChunkStore,
+    private readonly queryLogs: QueryLogStore,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     logger: AppLogger,
   ) {
@@ -37,94 +42,70 @@ export class QueryOrchestratorService {
     question: string,
     history: ConversationTurn[] = [],
   ): Promise<AskResponse> {
-    const traceId = currentTraceId() ?? newTraceId();
-    const totalStart = process.hrtime.bigint();
-
-    const repository = await this.prisma.repository.findUnique({ where: { id: repositoryId } });
-    if (!repository) throw new NotFoundException(`Repository ${repositoryId} not found`);
-    if (repository.status !== 'INDEXED') {
-      throw new ConflictException(
-        `Repository is ${repository.status.toLowerCase()}, not ready to answer questions yet.`,
-      );
-    }
+    const totalTimer = startTimer();
+    await this.requireIndexed(repositoryId);
 
     const retrievalQuery = buildRetrievalQuery(question, history);
-    const { context, timings: retrievalTimings } = await this.retrieval.retrieve(
-      repositoryId,
-      retrievalQuery,
-    );
+    const { context, timings } = await this.retrieval.retrieve(repositoryId, retrievalQuery);
 
-    const generateStart = process.hrtime.bigint();
+    const generateTimer = startTimer();
     const answer = await this.llm.answer({ question, contextText: context.text, history });
-    const generate = msSince(generateStart);
 
-    const timings = {
-      embedQuestion: retrievalTimings.embedQuestion,
-      retrieve: retrievalTimings.retrieve,
-      generate,
-      total: msSince(totalStart),
+    const response: AskResponse = {
+      answer,
+      // What retrieval handed the model - not a verified per-sentence attribution.
+      citations: context.chunks.map(toCitation),
+      timings: { ...timings, generate: generateTimer(), total: totalTimer() },
+      traceId: currentTraceId() ?? newTraceId(),
     };
 
-    // Citations are what retrieval handed the model, not a verified per-sentence attribution.
-    const citations: Citation[] = context.chunks.map((c) => ({
-      chunkId: c.id,
-      path: c.filePath,
-      startLine: c.startLine,
-      endLine: c.endLine,
-      symbol: c.symbol,
-      language: c.language,
-      score: Math.round(c.score * 1000) / 1000,
-    }));
+    await this.recordQuery(repositoryId, question, response, context.chunks);
+    return response;
+  }
 
-    await this.prisma.queryLog
-      .create({
-        data: {
-          repositoryId,
-          traceId,
-          question,
-          answer,
-          chunkIds: context.chunks.map((c) => c.id),
-          scores: context.chunks.map((c) => c.score),
-          timings,
-        },
+  /**
+   * Retrieval without generation: the ranked chunks themselves. For clients
+   * that are already an LLM (e.g. Claude Code over MCP), raw code beats a
+   * second model's summary of it.
+   */
+  async search(repositoryId: string, query: string, limit?: number): Promise<SearchResponse> {
+    await this.requireIndexed(repositoryId);
+    const { chunks, timings } = await this.retrieval.search(repositoryId, query, limit);
+    return { results: chunks.map(toSearchHit), timings };
+  }
+
+  /** Backs "click a citation to see the code": content is fetched on demand. */
+  async getChunkExcerpt(repositoryId: string, chunkId: string): Promise<ChunkExcerpt> {
+    const chunk = await this.chunks.findById(repositoryId, chunkId);
+    if (!chunk) throw new ChunkNotFoundError(chunkId);
+    return toChunkExcerpt(chunk);
+  }
+
+  private async requireIndexed(repositoryId: string): Promise<void> {
+    const repository = await this.repositories.findById(repositoryId);
+    if (!repository) throw new RepositoryNotFoundError(repositoryId);
+    if (repository.status !== 'INDEXED') throw new RepositoryNotReadyError(repository.status);
+  }
+
+  /** Best effort: losing a trace row must never cost the user their answer. */
+  private async recordQuery(
+    repositoryId: string,
+    question: string,
+    response: AskResponse,
+    chunks: RetrievedChunk[],
+  ): Promise<void> {
+    await this.queryLogs
+      .record({
+        repositoryId,
+        traceId: response.traceId,
+        question,
+        answer: response.answer,
+        chunkIds: chunks.map((c) => c.id),
+        scores: chunks.map((c) => c.score),
+        timings: response.timings,
       })
       .catch((err: unknown) =>
-        this.logger.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          'failed to persist query log - answer was still returned',
-        ),
+        this.logger.warn({ err: errorMessage(err) }, 'failed to record query log'),
       );
-
-    return { answer, citations, timings, traceId };
   }
-
-  /** Backs the "click a citation to see the code" UI - the answer only ever
-   * carries citation metadata (see the comment above), so the actual content
-   * is fetched on demand, scoped to this repository. */
-  async getChunkExcerpt(repositoryId: string, chunkId: string): Promise<ChunkExcerpt> {
-    const chunk = await this.chunkRepository.findById(repositoryId, chunkId);
-    if (!chunk) throw new NotFoundException(`Chunk ${chunkId} not found in this repository`);
-    return {
-      path: chunk.filePath,
-      startLine: chunk.startLine,
-      endLine: chunk.endLine,
-      symbol: chunk.symbol,
-      language: chunk.language,
-      content: chunk.content,
-    };
-  }
-}
-
-function msSince(start: bigint): number {
-  return Math.round(Number(process.hrtime.bigint() - start) / 1e6);
-}
-
-/** Prepends the previous question (not its answer) to the retrieval text, so
- * a short follow-up ("and where is that called from?") still embeds with
- * enough signal to retrieve on-topic chunks. Deliberately narrow - one prior
- * question, not the full thread, and never the answer text - this is a
- * heuristic nudge, not coreference resolution (see D9). */
-function buildRetrievalQuery(question: string, history: ConversationTurn[]): string {
-  const previousQuestion = history.at(-1)?.question;
-  return previousQuestion ? `${previousQuestion} ${question}` : question;
 }

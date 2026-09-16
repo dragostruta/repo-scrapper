@@ -1,48 +1,27 @@
 import 'reflect-metadata';
-import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { configureApp } from './app.setup';
 import { AppConfig } from './config/app-config';
-import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { AppLogger } from './common/logging/logger.service';
-import { createTraceMiddleware } from './common/logging/trace.middleware';
 import { IngestOrchestratorService } from './orchestrator/ingest-orchestrator.service';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  configureApp(app);
 
-  const logger = app.get(AppLogger);
-  const config = app.get(AppConfig);
+  // A restart can leave rows stuck mid-index (D8: no queue) - mark them retryable.
+  await app.get(IngestOrchestratorService).recoverInterruptedIndexing();
 
-  app.useLogger(logger);
-  app.use(createTraceMiddleware(logger));
+  const { port, llm } = app.get(AppConfig);
+  await app.listen(port, '0.0.0.0');
 
-  app.enableCors({
-    origin: true,
-    exposedHeaders: ['x-trace-id'],
-  });
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: false },
-    }),
-  );
-
-  app.useGlobalFilters(new AllExceptionsFilter(logger));
-  app.enableShutdownHooks();
-
-  // A restart can leave rows stuck mid-index (D8: no queue) - sweepOrphaned() retries them.
-  await app.get(IngestOrchestratorService).sweepOrphaned();
-
-  await app.listen(config.port, '0.0.0.0');
-
-  logger.root.info(
-    { context: 'bootstrap', port: config.port, llmProvider: config.llm.provider },
-    `API listening on http://0.0.0.0:${config.port}`,
-  );
+  app
+    .get(AppLogger)
+    .root.info(
+      { context: 'bootstrap', port, llmProvider: llm.provider },
+      `API listening on http://0.0.0.0:${port}`,
+    );
 }
 
 void bootstrap();

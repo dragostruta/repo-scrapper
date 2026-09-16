@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "npm run build --workspace=@app/shared && concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
-    "build": "npm run build --workspace=@app/shared && npm run build --workspace=@app/api && npm run build --workspace=@app/web",
+    "build": "npm run build --workspace=@app/shared && npm run build --workspace=@app/api && npm run build --workspace=@app/web && npm run build --workspace=@app/mcp",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run build --workspace=@app/shared && npm run typecheck --workspaces --if-present",
     "test": "npm run build --workspace=@app/shared && npm run test --workspaces --if-present",
@@ -17,6 +17,7 @@
     "db:studio": "npm run db:studio --workspace=@app/api",
     "dev:api": "npm run dev --workspace=@app/api",
     "dev:web": "npm run dev --workspace=@app/web",
+    "mcp:build": "npm run build --workspace=@app/shared && npm run build --workspace=@app/mcp",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",

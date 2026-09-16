@@ -4,50 +4,61 @@ export interface SymbolMatch {
   name: string;
 }
 
+const NAMED_DECLARATIONS = new Set([
+  'function_declaration',
+  'function_definition',
+  'class_declaration',
+  'class_definition',
+  'method_definition',
+]);
+
+const VARIABLE_DECLARATIONS = new Set(['lexical_declaration', 'variable_declaration']);
+
+const FUNCTION_VALUES = new Set(['arrow_function', 'function_expression']);
+
 /**
- * Given a top-level node, decides whether it names a symbol worth using as a
- * chunk boundary/label, and if so what to call it. Returning null means "not
- * a named symbol" - the node still becomes a chunk (or gets merged with
- * neighbours), it just has no symbol name attached.
+ * Decides whether a top-level node names a symbol worth using as a chunk
+ * label, and what to call it. Null means "no name" - the node still becomes
+ * (part of) a chunk, it just isn't labelled.
  *
- * Deliberately conservative: only function/class/method declarations and the
- * `const foo = () => {...}` pattern are recognised. Anything else (imports,
- * type aliases, plain statements) is treated as unnamed filler between
- * symbols, which is exactly what you want it to be.
+ * Deliberately conservative: function/class/method declarations and the
+ * `const foo = () => {...}` pattern only. Imports, type aliases and plain
+ * statements are unnamed filler between symbols, which is what they should be.
  */
 export function matchSymbol(node: TSNode, language: string): SymbolMatch | null {
-  // Unwrap `export function/class/const ...` one level before matching.
-  if (node.type === 'export_statement') {
-    const inner = node.namedChildren[0];
-    return inner ? matchSymbol(inner, language) : null;
+  if (node.type === 'export_statement') return matchExported(node, language);
+  if (NAMED_DECLARATIONS.has(node.type)) return matchNamedDeclaration(node);
+  if (VARIABLE_DECLARATIONS.has(node.type)) return matchFunctionVariable(node);
+  if (language === 'python' && node.type === 'decorated_definition') {
+    return matchDecorated(node, language);
   }
+  return null;
+}
 
-  switch (node.type) {
-    case 'function_declaration':
-    case 'function_definition':
-    case 'class_declaration':
-    case 'class_definition':
-    case 'method_definition': {
-      const nameNode = node.childForFieldName('name');
-      return nameNode ? { name: nameNode.text } : null;
-    }
-    case 'lexical_declaration':
-    case 'variable_declaration': {
-      // const foo = () => {} / const foo = function () {}
-      for (const declarator of node.namedChildren) {
-        if (declarator.type !== 'variable_declarator') continue;
-        const value = declarator.childForFieldName('value');
-        if (!value) continue;
-        if (value.type === 'arrow_function' || value.type === 'function_expression') {
-          const nameNode = declarator.childForFieldName('name');
-          if (nameNode) return { name: nameNode.text };
-        }
-      }
-      return null;
-    }
-    default:
-      return language === 'python' && node.type === 'decorated_definition'
-        ? matchSymbol(node.namedChildren[node.namedChildren.length - 1], language)
-        : null;
+/** `export function/class/const ...` - match what is being exported. */
+function matchExported(node: TSNode, language: string): SymbolMatch | null {
+  const inner = node.namedChildren[0];
+  return inner ? matchSymbol(inner, language) : null;
+}
+
+function matchNamedDeclaration(node: TSNode): SymbolMatch | null {
+  const nameNode = node.childForFieldName('name');
+  return nameNode ? { name: nameNode.text } : null;
+}
+
+/** `const foo = () => {}` / `const foo = function () {}` - the first function-valued declarator. */
+function matchFunctionVariable(node: TSNode): SymbolMatch | null {
+  for (const declarator of node.namedChildren) {
+    if (declarator.type !== 'variable_declarator') continue;
+    const value = declarator.childForFieldName('value');
+    const nameNode = declarator.childForFieldName('name');
+    if (value && nameNode && FUNCTION_VALUES.has(value.type)) return { name: nameNode.text };
   }
+  return null;
+}
+
+/** Python `@decorator` + def/class: the definition is the last named child. */
+function matchDecorated(node: TSNode, language: string): SymbolMatch | null {
+  const definition = node.namedChildren.at(-1);
+  return definition ? matchSymbol(definition, language) : null;
 }

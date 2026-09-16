@@ -4,7 +4,7 @@
  * column goes through raw SQL with this literal built by hand rather than
  * relying on Prisma's parameter binding.
  *
- * Safe to inline directly into a SQL string (see ChunkRepository) because the
+ * Safe to inline directly into a SQL string (see ChunkStore) because the
  * input is always a program-generated embedding, never user text - every
  * value is checked to be finite, so nothing here can smuggle in arbitrary SQL.
  */

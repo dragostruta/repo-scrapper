@@ -1,53 +1,55 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AppConfig } from '../config/app-config';
+import { startTimer } from '../common/timing';
 import { EMBEDDING_PROVIDER, type EmbeddingProvider } from '../embedding/embedding-provider';
-import { ChunkRepository, type RetrievedChunk } from './chunk-repository.service';
+import { ChunkStore, type RetrievedChunk } from '../persistence/chunk.store';
 import { assembleContext, type AssembledContext } from './context-assembler';
 
-export interface RetrievalResult {
-  context: AssembledContext;
+export interface SearchResult {
+  chunks: RetrievedChunk[];
   timings: { embedQuestion: number; retrieve: number };
 }
 
+export interface RetrievalResult {
+  context: AssembledContext;
+  timings: SearchResult['timings'];
+}
+
 /**
- * The retrieval half of a query: embed the question, run the scoped vector +
- * keyword search, assemble whatever fits the context budget. Everything
- * downstream (answering/) only ever sees the result of this, never touches
- * ChunkRepository directly - that is what keeps retrieval logic in one place
- * for both the HTTP and MCP adapters.
+ * The retrieval half of a query. `search` ranks chunks for a query;
+ * `retrieve` additionally trims them to the context budget for an LLM.
+ * Nothing downstream touches ChunkStore or the embedding model directly.
  */
 @Injectable()
 export class RetrievalService {
   constructor(
     @Inject(EMBEDDING_PROVIDER) private readonly embeddings: EmbeddingProvider,
-    private readonly chunkRepository: ChunkRepository,
+    private readonly chunks: ChunkStore,
     private readonly config: AppConfig,
   ) {}
 
-  async retrieve(repositoryId: string, question: string): Promise<RetrievalResult> {
-    const { topK, contextTokenBudget, keywordBoost } = this.config.retrieval;
+  /** Top chunks for `query`, highest score first. `topK` defaults to RETRIEVAL_TOP_K. */
+  async search(repositoryId: string, query: string, topK?: number): Promise<SearchResult> {
+    const { keywordBoost, topK: defaultTopK } = this.config.retrieval;
 
-    const embedStart = process.hrtime.bigint();
-    const [questionEmbedding] = await this.embeddings.embed([question]);
-    const embedQuestion = msSince(embedStart);
+    const embedTimer = startTimer();
+    const [embedding] = await this.embeddings.embed([query]);
+    const embedQuestion = embedTimer();
 
-    const retrieveStart = process.hrtime.bigint();
-    const chunks: RetrievedChunk[] = await this.chunkRepository.search(
-      repositoryId,
-      questionEmbedding,
-      question,
-      topK,
+    const retrieveTimer = startTimer();
+    const chunks = await this.chunks.search(repositoryId, {
+      embedding,
+      text: query,
+      topK: topK ?? defaultTopK,
       keywordBoost,
-    );
-    const retrieve = msSince(retrieveStart);
+    });
 
-    return {
-      context: assembleContext(chunks, contextTokenBudget),
-      timings: { embedQuestion, retrieve },
-    };
+    return { chunks, timings: { embedQuestion, retrieve: retrieveTimer() } };
   }
-}
 
-function msSince(start: bigint): number {
-  return Math.round(Number(process.hrtime.bigint() - start) / 1e6);
+  /** Search, then keep as many top chunks as fit CONTEXT_TOKEN_BUDGET. */
+  async retrieve(repositoryId: string, query: string): Promise<RetrievalResult> {
+    const { chunks, timings } = await this.search(repositoryId, query);
+    return { context: assembleContext(chunks, this.config.retrieval.contextTokenBudget), timings };
+  }
 }

@@ -1,82 +1,84 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
-import { AppConfig } from '../config/app-config';
-import { AppLogger } from '../common/logging/logger.service';
+import type { AppLogger } from '../common/logging/logger.service';
+import { LlmUnavailableError } from '../common/errors/domain-errors';
+import { errorMessage } from '../common/errors/error-message';
 import type { LlmAnswerRequest, LlmProvider } from './llm-provider';
-import { buildSystemPrompt, buildUserMessage } from './prompt';
+import { buildPromptMessages } from './prompt';
 
-/** Maps the SDK's error hierarchy to the same "tell the user what to do
- * about it" shape OllamaProvider uses, instead of letting it fall through to
- * AllExceptionsFilter's generic "Internal server error" - a missing/bad API
- * key or a rate limit is actionable, not a 500. A standalone function
- * (rather than a private method) so it can be unit tested directly against
- * the SDK's real error classes, without mocking the whole client. */
-function safeStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? String(value);
-  } catch {
-    return String(value);
-  }
+export interface AnthropicSettings {
+  model: string;
+  maxTokens: number;
 }
 
-export function mapAnthropicError(err: unknown): ServiceUnavailableException {
+/** The one SDK method this provider uses - lets tests pass a small fake. */
+export interface AnthropicMessagesClient {
+  messages: {
+    create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
+  };
+}
+
+/**
+ * Maps the SDK's error hierarchy to actionable messages. A bad key or a rate
+ * limit is something the user can fix, not an opaque 500.
+ */
+export function mapAnthropicError(err: unknown): LlmUnavailableError {
   if (err instanceof Anthropic.AuthenticationError) {
-    return new ServiceUnavailableException(
+    return new LlmUnavailableError(
       'Anthropic rejected the API key. Check ANTHROPIC_API_KEY in your .env.',
     );
   }
   if (err instanceof Anthropic.RateLimitError) {
-    return new ServiceUnavailableException(
+    return new LlmUnavailableError(
       'Anthropic rate-limited this request. Wait a moment and try again.',
     );
   }
   if (err instanceof Anthropic.APIConnectionError) {
-    return new ServiceUnavailableException(
+    return new LlmUnavailableError(
       'Could not reach the Anthropic API. Check your network connection and try again.',
     );
   }
   if (err instanceof Anthropic.APIError) {
-    return new ServiceUnavailableException(`Anthropic API error: ${err.message}`);
+    return new LlmUnavailableError(`Anthropic API error: ${err.message}`);
   }
-  const message = err instanceof Error ? err.message : safeStringify(err);
-  return new ServiceUnavailableException(`Unexpected error calling Anthropic: ${message}`);
+  return new LlmUnavailableError(`Unexpected error calling Anthropic: ${errorMessage(err)}`);
 }
 
-@Injectable()
+/** Concatenated text of every text block in a response; '' if there are none. */
+export function extractText(message: Anthropic.Message): string {
+  return message.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+}
+
 export class AnthropicProvider implements LlmProvider {
-  private readonly client: Anthropic;
-  private readonly model: string;
-  private readonly maxTokens: number;
   private readonly logger;
 
-  constructor(config: AppConfig, logger: AppLogger) {
-    const { apiKey, model, maxTokens } = config.llm.anthropic;
-    this.client = new Anthropic({ apiKey });
-    this.model = model;
-    this.maxTokens = maxTokens;
+  constructor(
+    private readonly client: AnthropicMessagesClient,
+    private readonly settings: AnthropicSettings,
+    logger: AppLogger,
+  ) {
     this.logger = logger.forContext('AnthropicProvider');
   }
 
-  async answer({ question, contextText, history }: LlmAnswerRequest): Promise<string> {
-    let response: Anthropic.Message;
+  async answer(request: LlmAnswerRequest): Promise<string> {
+    const message = await this.createMessage(request);
+    return extractText(message);
+  }
+
+  private async createMessage(request: LlmAnswerRequest): Promise<Anthropic.Message> {
+    const { system, user } = buildPromptMessages(request);
     try {
-      response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: this.maxTokens,
-        system: buildSystemPrompt(),
-        messages: [{ role: 'user', content: buildUserMessage(question, contextText, history) }],
+      return await this.client.messages.create({
+        model: this.settings.model,
+        max_tokens: this.settings.maxTokens,
+        system,
+        messages: [{ role: 'user', content: user }],
       });
     } catch (err) {
-      this.logger.error(
-        { err: err instanceof Error ? err.message : String(err) },
-        'anthropic request failed',
-      );
+      this.logger.error({ err: errorMessage(err) }, 'anthropic request failed');
       throw mapAnthropicError(err);
     }
-
-    const textBlock = response.content.find(
-      (block): block is Anthropic.TextBlock => block.type === 'text',
-    );
-    return textBlock?.text ?? '';
   }
 }

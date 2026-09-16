@@ -1,4 +1,4 @@
-import { chunkByLines } from './line-chunker';
+import { chunkByLines, nextWindowStart, overlapLines, windowEnd } from './line-chunker';
 import { TARGET_CHUNK_CHARS } from './chunk.types';
 
 describe('chunkByLines', () => {
@@ -44,5 +44,57 @@ describe('chunkByLines', () => {
     const chunks = chunkByLines(lines, 'bigFunction');
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((c) => c.symbol === 'bigFunction')).toBe(true);
+  });
+});
+
+describe('chunkByLines edge cases', () => {
+  it('terminates when a line over the target is followed by more lines (regression)', () => {
+    // Previously a one-line window overlapped itself entirely and looped forever.
+    const text = `${'x'.repeat(TARGET_CHUNK_CHARS + 100)}\nshort\nlast`;
+    const chunks = chunkByLines(text);
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.at(-1)!.endLine).toBe(3);
+  });
+
+  it('handles several consecutive oversized lines', () => {
+    const line = 'y'.repeat(TARGET_CHUNK_CHARS * 2);
+    const chunks = chunkByLines([line, line, line].join('\n'));
+    expect(chunks.map((c) => [c.startLine, c.endLine])).toEqual([
+      [1, 1],
+      [2, 2],
+      [3, 3],
+    ]);
+  });
+
+  it('keeps every chunk within reach of the target size', () => {
+    const lines = Array.from({ length: 500 }, (_, i) => `line ${i} ${'z'.repeat(40)}`);
+    for (const chunk of chunkByLines(lines.join('\n'))) {
+      expect(chunk.content.length).toBeLessThan(TARGET_CHUNK_CHARS + 60);
+    }
+  });
+
+  it('defaults the symbol to null', () => {
+    expect(chunkByLines('a\nb')[0].symbol).toBeNull();
+  });
+});
+
+describe('window helpers', () => {
+  it('windowEnd always takes at least one line', () => {
+    expect(windowEnd(['x'.repeat(TARGET_CHUNK_CHARS * 5)], 0)).toBe(1);
+  });
+
+  it('windowEnd stops at the end of the input', () => {
+    expect(windowEnd(['a', 'b'], 0)).toBe(2);
+  });
+
+  it('overlapLines is never less than one line', () => {
+    expect(overlapLines(1)).toBe(1);
+    expect(overlapLines(100)).toBe(15);
+  });
+
+  it('nextWindowStart always moves forward', () => {
+    expect(nextWindowStart(0, 1)).toBe(1);
+    expect(nextWindowStart(0, 100)).toBe(85);
+    expect(nextWindowStart(10, 12)).toBe(11);
   });
 });

@@ -2,10 +2,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cp, mkdtemp, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/app.setup';
 import { GithubClonerService, type ClonedRepo } from '../src/ingest/github-cloner.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -47,16 +48,8 @@ describe('POST /repositories -> ask (e2e)', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
-    // Mirrors main.ts's global pipe so this test exercises the same request
-    // validation behaviour as the real server, not Nest's defaults.
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: false },
-      }),
-    );
+    // Same pipes, filter and middleware as main.ts - the test exercises what production serves.
+    configureApp(app);
     await app.init();
 
     prisma = moduleRef.get(PrismaService);
@@ -107,5 +100,25 @@ describe('POST /repositories -> ask (e2e)', () => {
       total: expect.any(Number),
     });
     expect(typeof askRes.body.traceId).toBe('string');
+  });
+
+  it('404s in the standard error shape for a repository id that does not exist', async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/repositories/${randomUUID()}/ask`)
+      .send({ question: 'anything' })
+      .expect(404);
+
+    expect(res.body).toMatchObject({
+      statusCode: 404,
+      message: expect.stringContaining('not found'),
+    });
+    expect(res.body.traceId).toBe(res.headers['x-trace-id']);
+  });
+
+  it('refuses to read a chunk through a repository it does not belong to', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/repositories/${randomUUID()}/chunks/${randomUUID()}`)
+      .expect(404);
+    expect(res.body.statusCode).toBe(404);
   });
 });

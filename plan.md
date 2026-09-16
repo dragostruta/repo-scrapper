@@ -39,32 +39,32 @@ Last reviewed: 2026-09-16
 
 ### 1.3 Engineering excellence
 
-| #   | Requirement                            | Status | Notes                                                                                                                   |
-| --- | -------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------- |
-| E1  | Clean, readable, well-structured code  | Done   | Module-per-concern, orchestrator + thin adapters.                                                                       |
-| E2  | Containerised                          | Done   | `docker compose up` confirmed working end-to-end: indexed a repo and got answers back through the UI (Ollama provider). |
-| E3  | Well tested                            | Done   | Full suite (unit + e2e + golden retrieval) passes against real Postgres and real tree-sitter chunks.                    |
-| E4  | Observable                             | Done   | See A9.                                                                                                                 |
-| E5  | Tech stack that can graduate to an MVP | Done   | NestJS, Next.js, Postgres/pgvector.                                                                                     |
+| #   | Requirement                            | Status | Notes                                                                                                                                                                                                                                                         |
+| --- | -------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1  | Clean, readable, well-structured code  | Done   | Refactored for single responsibility: stores own all DB access, orchestrators split into ingest / indexing / file-indexing / query, domain errors decoupled from HTTP (D15), injectable git + LLM transports. Web: state in hooks, presentational components. |
+| E2  | Containerised                          | Done   | `docker compose up` confirmed working end-to-end: indexed a repo and got answers back through the UI (Ollama provider).                                                                                                                                       |
+| E3  | Well tested                            | Done   | 350+ API unit/contract tests (~96% lines), 84 web tests (100% lines), 79 MCP tests (100% lines) covering happy, failure and edge paths; DB-backed e2e + golden retrieval set for the real pipeline (D16).                                                     |
+| E4  | Observable                             | Done   | See A9.                                                                                                                                                                                                                                                       |
+| E5  | Tech stack that can graduate to an MVP | Done   | NestJS, Next.js, Postgres/pgvector.                                                                                                                                                                                                                           |
 
 ### 1.4 What to submit
 
-| #   | Deliverable                                                                                                                                                                   | Status                                              |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| S1  | GitHub repo with the code                                                                                                                                                     | Done                                                |
-| S2a | README: quick setup instructions                                                                                                                                              | Done                                                | `npm run setup -- ollama\|anthropic` - one command, fully automated, either provider. |
-| S2b | README: architecture overview (diagram optional)                                                                                                                              | Done                                                |
-| S2c | README: what it takes to productionize, scale and deploy on AWS / GCP / Azure / Cloudflare                                                                                    | Not started                                         |
-| S2d | README: RAG/LLM approach - options considered and final choice for LLM, embeddings, vector DB, orchestration; prompt & context management; guardrails; quality; observability | Not started (raw material in `docs/decisions.md`)   |
-| S2e | README: key technical decisions and why                                                                                                                                       | Partial (decision log exists, needs README summary) |
-| S2f | README: engineering standards followed, and some skipped                                                                                                                      | Not started                                         |
-| S2g | README: how AI tools were used in development (incl. do's and don'ts, repeatability)                                                                                          | Not started                                         |
-| S2h | README: what you'd do differently with more time                                                                                                                              | Not started                                         |
-| S2i | Written in your own words, not LLM output                                                                                                                                     | Your writing - AI can supply facts/outline only     |
-| S3  | Screenshots of the application                                                                                                                                                | Not started                                         |
-| S3+ | Video recording (if time permits)                                                                                                                                             | Not started                                         |
-| T1  | Acknowledge edge cases / limitations in README                                                                                                                                | Not started                                         |
-| T2  | Document what you'd add next in README                                                                                                                                        | Not started                                         |
+| #   | Deliverable                                                                                                                                                                   | Status                                                                                                        |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| S1  | GitHub repo with the code                                                                                                                                                     | Done                                                                                                          |
+| S2a | README: quick setup instructions                                                                                                                                              | Done                                                                                                          | `npm run setup -- ollama\|anthropic` - one command, fully automated, either provider. |
+| S2b | README: architecture overview (diagram optional)                                                                                                                              | Done - nine Mermaid diagrams (system, layers, ingest + ask sequences, chunking, errors, MCP, web, data model) |
+| S2c | README: what it takes to productionize, scale and deploy on AWS / GCP / Azure / Cloudflare                                                                                    | Not started                                                                                                   |
+| S2d | README: RAG/LLM approach - options considered and final choice for LLM, embeddings, vector DB, orchestration; prompt & context management; guardrails; quality; observability | Not started (raw material in `docs/decisions.md`)                                                             |
+| S2e | README: key technical decisions and why                                                                                                                                       | Partial (decision log exists, needs README summary)                                                           |
+| S2f | README: engineering standards followed, and some skipped                                                                                                                      | Not started                                                                                                   |
+| S2g | README: how AI tools were used in development (incl. do's and don'ts, repeatability)                                                                                          | Not started                                                                                                   |
+| S2h | README: what you'd do differently with more time                                                                                                                              | Not started                                                                                                   |
+| S2i | Written in your own words, not LLM output                                                                                                                                     | Your writing - AI can supply facts/outline only                                                               |
+| S3  | Screenshots of the application                                                                                                                                                | Not started                                                                                                   |
+| S3+ | Video recording (if time permits)                                                                                                                                             | Not started                                                                                                   |
+| T1  | Acknowledge edge cases / limitations in README                                                                                                                                | Not started                                                                                                   |
+| T2  | Document what you'd add next in README                                                                                                                                        | Not started                                                                                                   |
 
 ---
 
@@ -149,7 +149,7 @@ an over-engineered one._ Nothing from section 3 starts before phase 4 is done.
 
 ## 3. Enhancements (after all of the above)
 
-- MCP server over the same orchestrator (stdio, D10) - `ingest_repository` and `ask_about_repository` tools.
+- ~~MCP server~~ **Done 2026-09-16** - `apps/mcp`, stdio, five tools over the HTTP API (D14), with `.mcp.json` for Claude Code.
 - Local files ingest (zip upload or folder path).
 - Streaming answers.
 - Query rewriting for multi-turn follow-ups (D9 "what I'd do next").
@@ -258,3 +258,41 @@ build` succeeds. Item 5 (indexing progress/retry states) left as-is - the
   so answers are slower per-question than a native Ollama install. Not yet
   run for real (no Docker in this environment - same caveat as every other
   Docker change this session) - worth a live check next.
+- **2026-09-16i** - Engineering pass at the user's request (step 4, "wow"
+  features, deliberately postponed by the user):
+  1. **Refactor.** Every Prisma query moved into `persistence/`
+     (`RepositoryStore`, `ChunkStore`, `QueryLogStore`). The old
+     `IngestOrchestratorService` split into `IngestOrchestratorService`
+     (reuse/retry/create decision), `RepositoryIndexerService` (pipeline for
+     one repo, never throws) and `FileIndexerService` (one file). Services
+     throw domain errors mapped to HTTP in one filter (D15). `GitClient`
+     wraps every git call; LLM providers take their transport (Anthropic
+     client, `fetch`) by injection; shared `configureApp()` so tests run
+     exactly what `main.ts` serves. Web: state moved into hooks
+     (`useChat`, `useRepositoryIndexing`, `useActiveRepository`, ...),
+     components split and presentational.
+  2. **Bugs found and fixed along the way:** `chunkByLines` looped forever on
+     a line over 1200 chars followed by more lines (minified code - would
+     hang indexing); a failed clone was reported as `RepositoryTooLargeError`;
+     the temp clone dir leaked if `git rev-parse` failed; the web polling
+     interval restarted whenever the parent re-rendered; a second question
+     could be submitted while one was pending.
+  3. **Tests.** API: 350+ unit and HTTP-contract tests (real Nest pipeline,
+     faked orchestrators, no DB), ~96% line coverage; real-git integration
+     test against a local repo; e2e gained 404 paths. Web: Vitest + Testing
+     Library, 84 tests, 100% lines. MCP: 79 tests incl. the built binary over
+     real stdio, 100% lines. Regression tests proven to fail with the old
+     bugs reintroduced.
+  4. **MCP server** (`apps/mcp`): `list_repositories`, `index_repository`,
+     `search_code`, `ask_repository`, `get_code_excerpt`; new retrieval-only
+     `POST /repositories/:id/search` endpoint; `.mcp.json` for Claude Code;
+     `npm run mcp:build`, built automatically by `setup`. Dockerfiles unchanged:
+     verified `npm ci` accepts the lockfile without the host-only `apps/mcp`
+     workspace present, so the images don't carry MCP dependencies.
+  5. **Docs.** README architecture rewritten with nine Mermaid diagrams (all
+     validated with the Mermaid parser), MCP usage and testing sections;
+     decision log D14-D16.
+  - Not verifiable in this environment, to run on the Mac: `npm test` with
+    Postgres up (e2e + golden), `docker compose up --build` (Dockerfile
+    change), and Claude Code actually calling the MCP tools (`claude mcp
+list`, then a prompt) - the sandboxed Claude CLI here rejects MCP flags.
