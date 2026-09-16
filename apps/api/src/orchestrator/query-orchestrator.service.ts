@@ -1,10 +1,11 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { AskResponse, Citation, ConversationTurn } from '@app/shared';
+import type { AskResponse, ChunkExcerpt, Citation, ConversationTurn } from '@app/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppLogger } from '../common/logging/logger.service';
 import { currentTraceId, newTraceId } from '../common/logging/trace-context';
 import { RetrievalService } from '../retrieval/retrieval.service';
 import { LLM_PROVIDER, type LlmProvider } from '../answering/llm-provider';
+import { ChunkRepository } from '../retrieval/chunk-repository.service';
 
 /**
  * Owns the query side of the pipeline: load the repository, retrieve +
@@ -24,6 +25,7 @@ export class QueryOrchestratorService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly retrieval: RetrievalService,
+    private readonly chunkRepository: ChunkRepository,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     logger: AppLogger,
   ) {
@@ -65,6 +67,7 @@ export class QueryOrchestratorService {
 
     // Citations are what retrieval handed the model, not a verified per-sentence attribution.
     const citations: Citation[] = context.chunks.map((c) => ({
+      chunkId: c.id,
       path: c.filePath,
       startLine: c.startLine,
       endLine: c.endLine,
@@ -93,6 +96,22 @@ export class QueryOrchestratorService {
       );
 
     return { answer, citations, timings, traceId };
+  }
+
+  /** Backs the "click a citation to see the code" UI - the answer only ever
+   * carries citation metadata (see the comment above), so the actual content
+   * is fetched on demand, scoped to this repository. */
+  async getChunkExcerpt(repositoryId: string, chunkId: string): Promise<ChunkExcerpt> {
+    const chunk = await this.chunkRepository.findById(repositoryId, chunkId);
+    if (!chunk) throw new NotFoundException(`Chunk ${chunkId} not found in this repository`);
+    return {
+      path: chunk.filePath,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      symbol: chunk.symbol,
+      language: chunk.language,
+      content: chunk.content,
+    };
   }
 }
 

@@ -1,4 +1,4 @@
-import type { AskResponse, ConversationTurn, RepositorySummary } from '@app/shared';
+import type { AskResponse, ChunkExcerpt, ConversationTurn, RepositorySummary } from '@app/shared';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -41,6 +41,14 @@ export function createRepository(url: string): Promise<RepositorySummary> {
 
 export function getRepository(id: string): Promise<RepositorySummary> {
   return request(`/repositories/${id}`, { cache: 'no-store' });
+}
+
+export function listRepositories(): Promise<RepositorySummary[]> {
+  return request('/repositories', { cache: 'no-store' });
+}
+
+export function getChunkExcerpt(repositoryId: string, chunkId: string): Promise<ChunkExcerpt> {
+  return request(`/repositories/${repositoryId}/chunks/${chunkId}`, { cache: 'no-store' });
 }
 
 export function askRepository(

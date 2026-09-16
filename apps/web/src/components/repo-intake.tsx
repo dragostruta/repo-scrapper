@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { RepositorySummary } from '@app/shared';
-import { ApiError, createRepository, getRepository } from '@/lib/api';
+import { ApiError, createRepository, getRepository, listRepositories } from '@/lib/api';
 
 const STATUS_LABEL: Record<RepositorySummary['status'], string> = {
   PENDING: 'Queued',
@@ -30,6 +30,15 @@ export function RepoIntake({
   const [pollingId, setPollingId] = useState<string | null>(
     resume && !TERMINAL_STATUSES.includes(resume.status) ? resume.id : null,
   );
+  const [previouslyIndexed, setPreviouslyIndexed] = useState<RepositorySummary[]>([]);
+
+  // Best-effort - an empty or failed list just means the "previously indexed"
+  // section doesn't show, not a blocking error for the intake screen itself.
+  useEffect(() => {
+    listRepositories()
+      .then((repos) => setPreviouslyIndexed(repos.filter((r) => r.status === 'INDEXED')))
+      .catch(() => undefined);
+  }, []);
 
   // Single effect owns the interval's lifetime, so it's always cleared - on
   // unmount, on a status change, or when a fresh submit replaces the id.
@@ -71,6 +80,10 @@ export function RepoIntake({
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handlePick(existing: RepositorySummary) {
+    onIndexed(existing);
   }
 
   return (
@@ -119,6 +132,30 @@ export function RepoIntake({
       {repo?.status === 'FAILED' && (
         <div className="rounded-lg border border-rose-900/50 bg-rose-950/30 px-4 py-3 text-sm text-rose-300">
           {repo.error ?? 'Indexing failed.'}
+        </div>
+      )}
+
+      {previouslyIndexed.length > 0 && !repo && (
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-wide text-[var(--color-ink-muted)]">
+            Already indexed
+          </p>
+          <ul className="divide-y divide-[var(--color-border-subtle)] overflow-hidden rounded-lg border border-[var(--color-border-subtle)]">
+            {previouslyIndexed.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => handlePick(r)}
+                  className="flex w-full items-center justify-between bg-[var(--color-surface-raised)] px-4 py-2.5 text-left text-sm hover:bg-[var(--color-border-subtle)]"
+                >
+                  <span>{r.name}</span>
+                  <span className="text-xs text-[var(--color-ink-muted)]">
+                    {r.chunkCount} chunks &middot; {r.revision.slice(0, 7)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

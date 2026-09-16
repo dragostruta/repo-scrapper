@@ -13,7 +13,7 @@ import { StubLlmProvider } from './stub.provider';
       useFactory: (config: AppConfig, logger: AppLogger): LlmProvider => {
         switch (config.llm.provider) {
           case 'anthropic':
-            return new AnthropicProvider(config);
+            return new AnthropicProvider(config, logger);
           case 'ollama':
             return new OllamaProvider(config, logger);
           case 'stub':

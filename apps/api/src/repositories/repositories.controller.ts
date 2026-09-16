@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import type { AskResponse, RepositorySummary } from '@app/shared';
+import type { AskResponse, ChunkExcerpt, RepositorySummary } from '@app/shared';
 import {
   IngestOrchestratorService,
   requireRepository,
@@ -38,5 +38,10 @@ export class RepositoriesController {
   @Post(':id/ask')
   ask(@Param('id') id: string, @Body() dto: AskDto): Promise<AskResponse> {
     return this.query.ask(id, dto.question, dto.history ?? []);
+  }
+
+  @Get(':id/chunks/:chunkId')
+  getChunk(@Param('id') id: string, @Param('chunkId') chunkId: string): Promise<ChunkExcerpt> {
+    return this.query.getChunkExcerpt(id, chunkId);
   }
 }

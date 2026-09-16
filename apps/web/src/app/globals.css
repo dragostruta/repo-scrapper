@@ -29,3 +29,118 @@ code,
 pre {
   font-family: ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, monospace;
 }
+
+/* Minimal prose styling for rendered markdown answers - hand-rolled instead
+   of pulling in @tailwindcss/typography for a handful of element types. */
+.markdown-answer :where(p, ul, ol, blockquote) {
+  margin-bottom: 0.75em;
+}
+.markdown-answer :where(ul, ol) {
+  padding-left: 1.25em;
+}
+.markdown-answer ul {
+  list-style: disc;
+}
+.markdown-answer ol {
+  list-style: decimal;
+}
+.markdown-answer :where(h1, h2, h3, h4) {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+}
+.markdown-answer h1 {
+  font-size: 1.15em;
+}
+.markdown-answer h2 {
+  font-size: 1.08em;
+}
+.markdown-answer h3,
+.markdown-answer h4 {
+  font-size: 1em;
+}
+.markdown-answer a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-answer blockquote {
+  border-left: 2px solid var(--color-border-subtle);
+  padding-left: 0.75em;
+  color: var(--color-ink-muted);
+}
+.markdown-answer :not(pre) > code {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.85em;
+}
+.markdown-answer pre {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  margin-bottom: 0.75em;
+}
+.markdown-answer pre code {
+  font-size: 0.85em;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.markdown-answer table {
+  border-collapse: collapse;
+  margin-bottom: 0.75em;
+  font-size: 0.9em;
+}
+.markdown-answer :where(th, td) {
+  border: 1px solid var(--color-border-subtle);
+  padding: 0.35em 0.6em;
+}
+.markdown-answer th {
+  background-color: var(--color-surface-raised);
+}
+
+/* highlight.js theme, hand-adapted to the app's dark palette instead of
+   importing a full prebuilt theme stylesheet for a handful of token colors. */
+.hljs {
+  color: var(--color-ink);
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--color-ink-muted);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-type {
+  color: #c792ea;
+}
+.hljs-string,
+.hljs-attr,
+.hljs-template-tag,
+.hljs-template-variable {
+  color: #c3e88d;
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet {
+  color: #f78c6c;
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-title.class_ {
+  color: var(--color-accent);
+}
+.hljs-variable,
+.hljs-name,
+.hljs-attribute {
+  color: #ffcb6b;
+}
+.hljs-built_in,
+.hljs-builtin-name {
+  color: #89ddff;
+}

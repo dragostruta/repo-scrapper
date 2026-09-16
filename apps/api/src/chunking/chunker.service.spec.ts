@@ -46,20 +46,27 @@ describe('ChunkerService', () => {
   it('uses symbol boundaries when the tree-sitter grammar is available', async () => {
     // This directly exercises the tree-sitter path rather than going through
     // the fallback-tolerant ChunkerService, so it can make a real assertion
-    // when the grammar loads. When it does not (e.g. tree-sitter-wasms is
-    // not resolvable in this environment) that is the documented fallback
-    // behaviour (D5), not a test failure - see the README's known
-    // limitations for how to confirm which path is active.
+    // on the actual grammar output. Requires the Jest process to run with
+    // NODE_OPTIONS=--experimental-vm-modules (set in package.json's `test`
+    // script) - without it, web-tree-sitter's internal dynamic import is
+    // blocked by Jest's sandboxed VM context and this fails loudly instead
+    // of silently falling back to line-based chunking (see D5 in decisions.md).
     const text = fixture('sample.ts');
     const result = await chunkWithTreeSitter(text, 'typescript');
 
-    if (result === null) {
-      expect(result).toBeNull();
-      return;
-    }
+    expect(result).not.toBeNull();
 
-    const names = result.map((c) => c.symbol).filter(Boolean);
-    expect(names).toEqual(expect.arrayContaining(['greet', 'Greeter', 'shout']));
+    // Small trailing symbols can be folded into the previous chunk (see
+    // mergeSmallSegments), so a name may appear combined with another
+    // rather than as its own element - check containment, not exact
+    // element membership.
+    const joined = result!
+      .map((c) => c.symbol)
+      .filter(Boolean)
+      .join(' | ');
+    for (const name of ['greet', 'Greeter', 'shout']) {
+      expect(joined).toContain(name);
+    }
   });
 });
 
