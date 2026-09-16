@@ -30,6 +30,9 @@ export interface RepositorySummary {
 }
 
 export interface Citation {
+  /** The chunk this citation came from - fetch its content via
+   * GET /repositories/:id/chunks/:chunkId. */
+  chunkId: string;
   /** Path relative to the repository root, e.g. "src/auth/guard.ts". */
   path: string;
   startLine: number;
@@ -39,6 +42,18 @@ export interface Citation {
   language: string;
   /** Cosine similarity in [0, 1] after any lexical boost. */
   score: number;
+}
+
+/** The actual code behind a citation, fetched on demand rather than sent
+ * with every answer (keeps AskResponse small when an answer cites many
+ * chunks the user never expands). */
+export interface ChunkExcerpt {
+  path: string;
+  startLine: number;
+  endLine: number;
+  symbol: string | null;
+  language: string;
+  content: string;
 }
 
 export interface AskResponse {

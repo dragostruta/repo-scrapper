@@ -13,31 +13,49 @@ exact file and line range.
 
 ## Quick start
 
-You need Docker, Node 22 and one API key.
+You need Docker and Node 22. Pick one command depending on which LLM you
+want to answer questions - both are genuinely one command, no manual `.env`
+editing required:
 
 ```bash
-# once, to produce the lockfile the Docker build expects
-npm install
+npm install   # once, to produce the lockfile the Docker build expects
 
-cp .env.example .env
-# open .env and set ANTHROPIC_API_KEY=sk-ant-...
-docker compose up --build
+npm run setup -- anthropic   # hosted Claude - prompts for an API key
+# or
+npm run setup -- ollama      # fully local - no API key, nothing else to install
 ```
 
-The first build takes a few minutes: it compiles both apps and the API
-downloads the embedding model on first use.
+Either way, `setup` creates `.env` from `.env.example`, configures the chosen
+provider, and runs `docker compose up --build` for you.
 
 - Web UI: http://localhost:3000
 - API: http://localhost:3001/health
 
-That is the whole setup. Embeddings run locally inside the API container, so
-there is no second credential to obtain and no embedding cost.
+Embeddings run locally inside the API container either way, so that part
+never needs a credential or has an ongoing cost.
 
-### Running fully local (no API key at all)
+**`anthropic`** prompts once for `ANTHROPIC_API_KEY` (from
+https://console.anthropic.com/) if `.env` doesn't already have one, then
+brings the stack up. Nothing else to configure.
 
-Set `LLM_PROVIDER=ollama` in `.env` and point `OLLAMA_BASE_URL` at an Ollama
-instance on the host (`http://host.docker.internal:11434` from inside Docker).
-Answer quality drops, but nothing leaves the machine.
+**`ollama`** brings up a bundled Ollama container alongside the rest of the
+stack and pulls `qwen2.5-coder:7b` into it automatically - fully local, no
+API key. Two things to know: the first run downloads that model (~4.7GB) on
+top of the usual image builds, so it takes noticeably longer than the
+anthropic path (`docker compose logs -f ollama-pull` shows progress); and
+because Docker Desktop's Linux VM has no GPU/Metal access, inference runs
+CPU-only and is slower per answer than a native Ollama install
+(`brew install ollama`) would be.
+
+Already set up and want to swap providers without a full rebuild:
+
+```bash
+npm run llm:switch -- ollama
+npm run llm:switch -- anthropic
+```
+
+This only recreates the `api` container (and starts `ollama`/pulls the model
+the first time you switch to it) - much faster than re-running `setup`.
 
 ### Local development loop
 
@@ -67,6 +85,8 @@ a bypassed or missing hook still gets caught.
 
 | Command                                   | What it does                                                                           |
 | ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| `npm run setup -- ollama\|anthropic`      | One-command Docker setup with the chosen LLM provider (see Quick start)                |
+| `npm run llm:switch -- ollama\|anthropic` | Swaps provider on an already-running stack without a full rebuild                      |
 | `npm run dev`                             | Runs API and web in watch mode                                                         |
 | `npm test`                                | Unit and integration tests                                                             |
 | `npm run lint` / `npm run typecheck`      | Static checks, same ones CI runs                                                       |
@@ -176,17 +196,17 @@ resolve (line-based chunking, not a crash).
 
 ## Sections still to write
 
-These are the parts the assignment asks for in my own words. They are
-deliberately empty rather than filled with plausible-sounding text - I will
-write them from what actually happens during the build.
+Required by the assignment brief ("What to Submit", item 2), to be written in
+my own words. Progress is tracked in [`plan.md`](plan.md).
 
-- [ ] Productionising this on a hyperscaler
-- [ ] RAG/LLM approach and decisions
-- [ ] Key technical decisions
-- [ ] Engineering standards followed, and the ones I skipped
-- [ ] How I used AI tools while building this
-- [ ] What I would do differently with more time
+- [ ] Productionising this and deploying it on a hyperscaler (2c)
+- [ ] RAG/LLM approach and decisions (2d)
+- [ ] Key technical decisions (2e)
+- [ ] Engineering standards followed, and the ones I skipped (2f)
+- [ ] How I used AI tools while building this (2g)
+- [ ] What I would do differently with more time (2h)
 - [ ] Known limitations and edge cases
+- [ ] Screenshots
 
 Decisions made so far, with reasoning, are logged in
 [`docs/decisions.md`](docs/decisions.md).
