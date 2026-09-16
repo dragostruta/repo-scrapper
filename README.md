@@ -53,20 +53,26 @@ npm run dev          # api on :3001, web on :3000
 ```
 
 Requires Node 22 and npm 10+ (ships with it). Local-only commands
-(`dev`, `db:migrate`, `db:studio`) load `.env` from the repository root via
+(`dev`, `test`, `db:migrate`, `db:studio`) load `.env` from the repository root via
 `dotenv-cli`, since npm runs workspace scripts with the workspace folder as
 the working directory. `docker compose` and CI never need this - they get
 real environment variables injected directly.
 
+`npm install` also wires up a Husky pre-commit hook (via the `prepare`
+script) that runs Prettier and each workspace's ESLint on staged files -
+CI enforces the same two checks (`format:check`, `lint`) independently, so
+a bypassed or missing hook still gets caught.
+
 ### Useful commands
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Runs API and web in watch mode |
-| `npm test` | Unit and integration tests |
-| `npm run lint` / `npm run typecheck` | Static checks, same ones CI runs |
-| `npm run db:migrate` | Creates/applies a migration against the dev database |
-| `npm run db:studio` | Prisma Studio, for poking at indexed chunks |
+| Command                                   | What it does                                                                           |
+| ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| `npm run dev`                             | Runs API and web in watch mode                                                         |
+| `npm test`                                | Unit and integration tests                                                             |
+| `npm run lint` / `npm run typecheck`      | Static checks, same ones CI runs                                                       |
+| `npm run format` / `npm run format:check` | Prettier - write or verify; the pre-commit hook runs the write version on staged files |
+| `npm run db:migrate`                      | Creates/applies a migration against the dev database                                   |
+| `npm run db:studio`                       | Prisma Studio, for poking at indexed chunks                                            |
 
 ---
 
@@ -84,65 +90,52 @@ flowchart TD
         mcp["MCP server (not built yet)"]
     end
 
-    orch["Orchestrator
-IngestOrchestratorService · QueryOrchestratorService"]
+    orch["Orchestrator<br/>IngestOrchestratorService · QueryOrchestratorService"]
 
     web --> orch
     mcp -.-> orch
 
     subgraph ingest["ingest a repo"]
         direction LR
-        parse["parseGithubUrl"] --> clone["GithubClonerService
-shallow clone, sha cache probe"]
-        clone --> walk["FileWalkerService
-skip binaries/locks/oversize"]
-        walk --> chunk["ChunkerService
-tree-sitter → line fallback"]
-        chunk --> embed1["EmbeddingProvider
-bge-small-en-v1.5, local"]
-        embed1 --> insert["ChunkRepository.insertMany
-batched raw SQL"]
+        parse["parseGithubUrl"] --> clone["GithubClonerService<br/>shallow clone, sha cache probe"]
+        clone --> walk["FileWalkerService<br/>skip binaries/locks/oversize"]
+        walk --> chunk["ChunkerService<br/>tree-sitter → line fallback"]
+        chunk --> embed1["EmbeddingProvider<br/>bge-small-en-v1.5, local"]
+        embed1 --> insert["ChunkRepository.insertMany<br/>batched raw SQL"]
     end
 
     subgraph query["answer a question"]
         direction LR
-        embed2["EmbeddingProvider
-embed the question"] --> search["ChunkRepository.search
-cosine + trigram boost"]
-        search --> assemble["assembleContext
-token-budget trim"]
-        assemble --> llm["LlmProvider
-Anthropic / Ollama / stub"]
-        llm --> qlog["QueryLog
-persisted, non-blocking"]
+        embed2["EmbeddingProvider<br/>embed the question"] --> search["ChunkRepository.search<br/>cosine + trigram boost"]
+        search --> assemble["assembleContext<br/>token-budget trim"]
+        assemble --> llm["LlmProvider<br/>Anthropic / Ollama / stub"]
+        llm --> qlog["QueryLog<br/>persisted, non-blocking"]
     end
 
     orch --> ingest
     orch --> query
 
-    insert --> db[("Postgres + pgvector
-repositories · chunks · query_logs")]
+    insert --> db[("Postgres + pgvector<br/>repositories · chunks · query_logs")]
     search --> db
-    llm --> ext[("Anthropic API / Ollama
-generation only - no embedding calls leave the box")]
+    llm --> ext[("Anthropic API / Ollama<br/>generation only - no embedding calls leave the box")]
 ```
 
 ### Backend modules (`apps/api/src`)
 
-| Module | Responsibility |
-| --- | --- |
-| `config/` | Parses and validates the environment once, at boot |
-| `common/logging/` | pino logger, trace id propagation via AsyncLocalStorage |
-| `prisma/` | Database client lifecycle |
-| `health/` | Liveness and configuration echo |
-| `ingest/` | GitHub clone with guardrails, file walking, filtering |
-| `chunking/` | tree-sitter parsing, chunk construction, line-based fallback |
-| `embedding/` | Embedding provider interface + local implementation |
-| `retrieval/` | Vector search, ranking, context assembly |
-| `answering/` | Prompt construction, LLM provider (Anthropic/Ollama/stub) |
-| `orchestrator/` | Ties the above into ingest + ask - the one thing every adapter calls |
-| `repositories/` | HTTP adapter over the orchestrator |
-| `mcp/` | *(Phase 3, not started)* MCP tools over the same orchestrator |
+| Module            | Responsibility                                                       |
+| ----------------- | -------------------------------------------------------------------- |
+| `config/`         | Parses and validates the environment once, at boot                   |
+| `common/logging/` | pino logger, trace id propagation via AsyncLocalStorage              |
+| `prisma/`         | Database client lifecycle                                            |
+| `health/`         | Liveness and configuration echo                                      |
+| `ingest/`         | GitHub clone with guardrails, file walking, filtering                |
+| `chunking/`       | tree-sitter parsing, chunk construction, line-based fallback         |
+| `embedding/`      | Embedding provider interface + local implementation                  |
+| `retrieval/`      | Vector search, ranking, context assembly                             |
+| `answering/`      | Prompt construction, LLM provider (Anthropic/Ollama/stub)            |
+| `orchestrator/`   | Ties the above into ingest + ask - the one thing every adapter calls |
+| `repositories/`   | HTTP adapter over the orchestrator                                   |
+| `mcp/`            | _(Phase 3, not started)_ MCP tools over the same orchestrator        |
 
 ### Repository layout
 

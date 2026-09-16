@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { AskResponse, Citation, RepositorySummary } from '@app/shared';
+import type { AskResponse, Citation, ConversationTurn, RepositorySummary } from '@app/shared';
 import { ApiError, askRepository } from '@/lib/api';
 
 interface Message {
@@ -14,7 +14,32 @@ interface Message {
   pending: boolean;
 }
 
-export function ChatPanel({ repo }: { repo: RepositorySummary }) {
+/** How many prior turns ride along with each new question, and how much of
+ * each answer survives into that history - keeps follow-ups working without
+ * letting a long chat balloon the prompt (D7: cheap by default). */
+const HISTORY_TURNS = 4;
+const HISTORY_ANSWER_CHARS = 600;
+
+function toHistory(messages: Message[]): ConversationTurn[] {
+  return messages
+    .filter((m): m is Message & { answer: string } => !m.pending && !!m.answer)
+    .slice(-HISTORY_TURNS)
+    .map((m) => ({
+      question: m.question,
+      answer:
+        m.answer.length > HISTORY_ANSWER_CHARS
+          ? `${m.answer.slice(0, HISTORY_ANSWER_CHARS)}…`
+          : m.answer,
+    }));
+}
+
+export function ChatPanel({
+  repo,
+  onSwitchRepo,
+}: {
+  repo: RepositorySummary;
+  onSwitchRepo: () => void;
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState('');
 
@@ -24,15 +49,22 @@ export function ChatPanel({ repo }: { repo: RepositorySummary }) {
     if (!trimmed) return;
 
     const id = crypto.randomUUID();
+    const history = toHistory(messages);
     setMessages((prev) => [...prev, { id, question: trimmed, pending: true }]);
     setQuestion('');
 
     try {
-      const response = await askRepository(repo.id, trimmed);
+      const response = await askRepository(repo.id, trimmed, history);
       setMessages((prev) =>
         prev.map((m) =>
           m.id === id
-            ? { ...m, pending: false, answer: response.answer, citations: response.citations, timings: response.timings }
+            ? {
+                ...m,
+                pending: false,
+                answer: response.answer,
+                citations: response.citations,
+                timings: response.timings,
+              }
             : m,
         ),
       );
@@ -40,7 +72,11 @@ export function ChatPanel({ repo }: { repo: RepositorySummary }) {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === id
-            ? { ...m, pending: false, error: err instanceof ApiError ? err.message : 'Request failed.' }
+            ? {
+                ...m,
+                pending: false,
+                error: err instanceof ApiError ? err.message : 'Request failed.',
+              }
             : m,
         ),
       );
@@ -53,16 +89,24 @@ export function ChatPanel({ repo }: { repo: RepositorySummary }) {
         <div>
           <h1 className="text-lg font-semibold">{repo.name}</h1>
           <p className="text-xs text-[var(--color-ink-muted)]">
-            {repo.chunkCount} chunks &middot; {repo.fileCount} files &middot; {repo.revision.slice(0, 7)}
+            {repo.chunkCount} chunks &middot; {repo.fileCount} files &middot;{' '}
+            {repo.revision.slice(0, 7)}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={onSwitchRepo}
+          className="rounded-lg border border-[var(--color-border-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+        >
+          Switch repository
+        </button>
       </header>
 
       <div className="flex-1 space-y-6 overflow-y-auto pb-4">
         {messages.length === 0 && (
           <p className="text-sm text-[var(--color-ink-muted)]">
-            Ask how something works, where a piece of functionality lives, or what an endpoint
-            does. Answers are grounded in this repository only.
+            Ask how something works, where a piece of functionality lives, or what an endpoint does.
+            Answers are grounded in this repository only.
           </p>
         )}
         {messages.map((m) => (
@@ -70,7 +114,10 @@ export function ChatPanel({ repo }: { repo: RepositorySummary }) {
         ))}
       </div>
 
-      <form onSubmit={handleSubmit} className="flex gap-2 border-t border-[var(--color-border-subtle)] pt-4">
+      <form
+        onSubmit={handleSubmit}
+        className="flex gap-2 border-t border-[var(--color-border-subtle)] pt-4"
+      >
         <input
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
@@ -123,8 +170,8 @@ function MessageBubble({ message }: { message: Message }) {
 
           {message.timings && (
             <p className="mt-2 text-[10px] uppercase tracking-wide text-[var(--color-ink-muted)]">
-              {message.timings.total}ms total &middot; {message.timings.retrieve}ms retrieve &middot;{' '}
-              {message.timings.generate}ms generate
+              {message.timings.total}ms total &middot; {message.timings.retrieve}ms retrieve
+              &middot; {message.timings.generate}ms generate
             </p>
           )}
         </div>

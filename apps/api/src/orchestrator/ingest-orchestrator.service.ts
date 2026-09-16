@@ -48,12 +48,17 @@ export class IngestOrchestratorService {
 
     if (probableSha) {
       const existing = await this.prisma.repository.findUnique({
-        where: { source_name_revision: { source: 'GITHUB', name: parsed.name, revision: probableSha } },
+        where: {
+          source_name_revision: { source: 'GITHUB', name: parsed.name, revision: probableSha },
+        },
       });
 
       if (existing) {
         if (existing.status === 'INDEXED') {
-          this.logger.info({ repo: parsed.name, revision: probableSha }, 'cache hit - already indexed');
+          this.logger.info(
+            { repo: parsed.name, revision: probableSha },
+            'cache hit - already indexed',
+          );
           return toRepositorySummary(existing);
         }
 
@@ -180,7 +185,10 @@ export class IngestOrchestratorService {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error({ repositoryId, err: message }, 'indexing failed');
       await this.prisma.repository
-        .update({ where: { id: repositoryId }, data: { status: 'FAILED', error: message.slice(0, 2000) } })
+        .update({
+          where: { id: repositoryId },
+          data: { status: 'FAILED', error: message.slice(0, 2000) },
+        })
         .catch(() => undefined);
     } finally {
       if (clonedDir) await this.cloner.cleanup(clonedDir).catch(() => undefined);

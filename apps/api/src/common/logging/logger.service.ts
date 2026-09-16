@@ -23,7 +23,12 @@ export class AppLogger implements LoggerService {
         return traceId ? { traceId } : {};
       },
       redact: {
-        paths: ['req.headers.authorization', 'req.headers.cookie', '*.apiKey', '*.ANTHROPIC_API_KEY'],
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          '*.apiKey',
+          '*.ANTHROPIC_API_KEY',
+        ],
         censor: '[redacted]',
       },
       ...(config.isProduction
@@ -31,7 +36,11 @@ export class AppLogger implements LoggerService {
         : {
             transport: {
               target: 'pino-pretty',
-              options: { colorize: true, translateTime: 'HH:MM:ss.l', ignore: 'pid,hostname,service' },
+              options: {
+                colorize: true,
+                translateTime: 'HH:MM:ss.l',
+                ignore: 'pid,hostname,service',
+              },
             },
           }),
     });

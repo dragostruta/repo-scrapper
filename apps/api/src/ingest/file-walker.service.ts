@@ -15,14 +15,34 @@ export interface WalkedFile {
 }
 
 const IGNORED_DIRS = new Set([
-  '.git', 'node_modules', 'dist', 'build', 'out', '.next', '.nuxt',
-  'coverage', 'vendor', '__pycache__', '.venv', 'venv', '.tox',
-  '.turbo', '.cache', 'target', '.idea', '.vscode',
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  '.next',
+  '.nuxt',
+  'coverage',
+  'vendor',
+  '__pycache__',
+  '.venv',
+  'venv',
+  '.tox',
+  '.turbo',
+  '.cache',
+  'target',
+  '.idea',
+  '.vscode',
 ]);
 
 const IGNORED_FILE_NAMES = new Set([
-  'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'poetry.lock',
-  'Cargo.lock', 'Gemfile.lock', 'composer.lock',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'poetry.lock',
+  'Cargo.lock',
+  'Gemfile.lock',
+  'composer.lock',
 ]);
 
 /**

@@ -22,7 +22,7 @@ export class OllamaProvider implements LlmProvider {
     this.logger = logger.forContext('OllamaProvider');
   }
 
-  async answer({ question, contextText }: LlmAnswerRequest): Promise<string> {
+  async answer({ question, contextText, history }: LlmAnswerRequest): Promise<string> {
     const { baseUrl, model } = this.config.llm.ollama;
 
     let response: Response;
@@ -35,7 +35,7 @@ export class OllamaProvider implements LlmProvider {
           stream: false,
           messages: [
             { role: 'system', content: buildSystemPrompt() },
-            { role: 'user', content: buildUserMessage(question, contextText) },
+            { role: 'user', content: buildUserMessage(question, contextText, history) },
           ],
         }),
       });
@@ -50,7 +50,9 @@ export class OllamaProvider implements LlmProvider {
 
     if (!response.ok) {
       const body = await response.text();
-      throw new ServiceUnavailableException(`Ollama returned ${response.status}: ${body.slice(0, 500)}`);
+      throw new ServiceUnavailableException(
+        `Ollama returned ${response.status}: ${body.slice(0, 500)}`,
+      );
     }
 
     const data = (await response.json()) as OllamaChatResponse;

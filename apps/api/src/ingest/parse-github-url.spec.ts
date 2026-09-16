@@ -31,7 +31,9 @@ describe('parseGithubUrl', () => {
   });
 
   it('rejects a bare host with no owner/repo', () => {
-    expect(() => parseGithubUrl('https://github.com/', HOSTS)).toThrow(InvalidRepositorySourceError);
+    expect(() => parseGithubUrl('https://github.com/', HOSTS)).toThrow(
+      InvalidRepositorySourceError,
+    );
   });
 
   it('rejects garbage input', () => {

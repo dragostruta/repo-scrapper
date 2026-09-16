@@ -35,7 +35,10 @@ describe('FileWalkerService', () => {
           provide: AppConfig,
           useValue: { ingest: { maxFiles: 100, maxFileSizeBytes: 1024 * 1024 } },
         },
-        { provide: AppLogger, useValue: { forContext: () => ({ info: jest.fn(), warn: jest.fn() }) } },
+        {
+          provide: AppLogger,
+          useValue: { forContext: () => ({ info: jest.fn(), warn: jest.fn() }) },
+        },
       ],
     }).compile();
     service = moduleRef.get(FileWalkerService);

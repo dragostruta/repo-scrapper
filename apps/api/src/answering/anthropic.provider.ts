@@ -17,12 +17,12 @@ export class AnthropicProvider implements LlmProvider {
     this.maxTokens = maxTokens;
   }
 
-  async answer({ question, contextText }: LlmAnswerRequest): Promise<string> {
+  async answer({ question, contextText, history }: LlmAnswerRequest): Promise<string> {
     const response = await this.client.messages.create({
       model: this.model,
       max_tokens: this.maxTokens,
       system: buildSystemPrompt(),
-      messages: [{ role: 'user', content: buildUserMessage(question, contextText) }],
+      messages: [{ role: 'user', content: buildUserMessage(question, contextText, history) }],
     });
 
     const textBlock = response.content.find(

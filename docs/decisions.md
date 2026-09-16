@@ -46,7 +46,7 @@ transformers.js on CPU.
 Cohere.
 
 **Why.** Anthropic does not offer an embedding model, so a hosted embedding
-model means a *second* credential a reviewer has to go and obtain before this
+model means a _second_ credential a reviewer has to go and obtain before this
 project runs at all. Local means: one env var to fill, no network dependency in
 tests, deterministic results in CI, and zero embedding cost regardless of how
 many repositories get indexed.
@@ -155,19 +155,39 @@ multi-user traffic, and it is called out in the README.
 
 ---
 
-## D9 - Standalone questions in v1, conversation history later
+## D9 - Conversation history: client-supplied, generation-side by default
 
-**Decision.** Each question is answered independently. No conversation memory.
+**Decision.** The client (web UI) resends the last few Q&A turns with every
+`/ask` call; the server stays stateless - no `conversations` table, no
+session id. Those turns are folded into the LLM prompt in full, so a
+follow-up like "and where is that called from?" resolves correctly in the
+_answer_. For _retrieval_, only the single previous question - never its
+answer - is prepended to the current one before embedding.
 
-**Why.** Follow-up questions ("and where is that called from?") need query
-rewriting to retrieve correctly - resolving "that" against the previous turn
-before embedding. Doing it badly is worse than not doing it: the retrieval
-silently degrades and the answers get confidently wrong. Getting single-turn
-retrieval right first is the higher-value work.
+**Why split it this way.** The original concern here (see below) was about
+retrieval: guessing what a follow-up refers to and embedding the guess is
+what silently degrades results and produces confidently wrong answers.
+Generation-side history doesn't have that risk - handing the model the prior
+Q&A verbatim and asking it to resolve pronouns is exactly the kind of thing
+an LLM is good at, and it's what actually fixes the "the assistant forgets
+what I just asked" UX complaint. The retrieval-side change is intentionally
+the narrow, low-risk version of what was originally ruled out: one prior
+question as a lexical nudge, not a rewritten query, not the full thread, and
+never the answer text (which is long and would drag the embedding toward
+whatever the model said rather than what the user is asking now).
 
-**Cost.** The UX is noticeably more rigid. The additive path is clear - a
-`conversations` table plus a rewrite step before embedding - and it is on the
-"what I would do next" list rather than half-built.
+**What this doesn't do.** A multi-turn thread where the third follow-up
+depends on resolving something from the first question, not the second, will
+still under-retrieve - the nudge only looks one turn back. A real query
+rewrite step (a small LLM call that turns "what about the logout flow" into
+a standalone "How does the logout flow work in this codebase?" before
+embedding) would handle that properly and is still the "what I'd do next"
+item; today's version is a heuristic, not that.
+
+**Cost.** Each request now resends up to 4 prior turns (capped to ~600
+chars of answer text per turn client-side, 6 turns / 2000+8000 chars
+server-side as a hard ceiling via `AskDto`) - more prompt tokens per
+question as a chat gets longer, bounded rather than unbounded.
 
 ---
 
@@ -202,7 +222,7 @@ when it is needed.
 and it breaks silently. A recall@K assertion over a golden set is the only
 test that notices when a chunking change quietly makes retrieval worse.
 
-**Cost.** No test asserts that the *answers* are good, only that the right
+**Cost.** No test asserts that the _answers_ are good, only that the right
 context was retrieved. Judging answer quality needs an eval harness with a
 model in the loop, which is out of scope here.
 
