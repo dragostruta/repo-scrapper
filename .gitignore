@@ -1,0 +1,27 @@
+node_modules/
+dist/
+
+# personal AI-assistant tooling config, not part of the deliverable
+.claude/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+
+.env
+.env.local
+.env.*.local
+
+# never commit real secrets; .env.example is the contract
+!.env.example
+
+.DS_Store
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# runtime working dirs
+/data/repos/
+/data/models/
+apps/api/.cache/
