@@ -9,7 +9,7 @@ export const STARTER_QUESTIONS = [
 export function StarterQuestions({ onPick }: { onPick: (question: string) => void }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm text-[var(--color-ink-muted)]">
+      <p className="text-sm text-ink-muted">
         Ask how something works, where a piece of functionality lives, or what an endpoint does.
         Answers are grounded in this repository only.
       </p>
@@ -19,7 +19,7 @@ export function StarterQuestions({ onPick }: { onPick: (question: string) => voi
             key={question}
             type="button"
             onClick={() => onPick(question)}
-            className="rounded-full border border-[var(--color-border-subtle)] px-3 py-1.5 text-xs text-[var(--color-ink-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+            className="rounded-full border border-border-subtle px-3 py-1.5 text-xs text-ink-muted hover:border-accent hover:text-accent"
           >
             {question}
           </button>

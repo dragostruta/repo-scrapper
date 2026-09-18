@@ -22,7 +22,7 @@ export function RepoIntake({
     <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-6 px-6 py-16">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Code Documentation Assistant</h1>
-        <p className="text-sm text-[var(--color-ink-muted)]">
+        <p className="text-sm text-ink-muted">
           Paste a public GitHub repository URL. It gets shallow-cloned, chunked and embedded
           locally, then you can ask questions with answers cited to file and line.
         </p>

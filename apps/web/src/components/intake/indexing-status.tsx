@@ -17,10 +17,10 @@ export function IndexingStatus({ repository }: { repository: RepositorySummary }
   return (
     <div
       aria-live="polite"
-      className="flex items-center gap-3 rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] px-4 py-3 text-sm"
+      className="flex items-center gap-3 rounded-lg border border-border-subtle bg-surface-raised px-4 py-3 text-sm"
     >
       {!ready && (
-        <span className="h-3 w-3 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
+        <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
       )}
       <span>
         {repository.name} &middot; {STATUS_LABEL[repository.status]}

@@ -14,8 +14,8 @@ export function MessageBubble({
       <p className="text-sm font-medium">{message.question}</p>
 
       {message.pending && (
-        <p className="text-sm text-[var(--color-ink-muted)]" aria-live="polite">
-          <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-[var(--color-accent)]" />
+        <p className="text-sm text-ink-muted" aria-live="polite">
+          <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-accent" />
           Thinking&hellip;
         </p>
       )}
@@ -27,11 +27,11 @@ export function MessageBubble({
       )}
 
       {message.answer && (
-        <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] p-4">
+        <div className="rounded-lg border border-border-subtle bg-surface-raised p-4">
           <MarkdownAnswer text={message.answer} />
 
           {message.citations && message.citations.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[var(--color-border-subtle)] pt-3">
+            <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border-subtle pt-3">
               {message.citations.map((citation) => (
                 <CitationChip
                   key={citation.chunkId}
@@ -43,7 +43,7 @@ export function MessageBubble({
           )}
 
           {message.timings && (
-            <p className="mt-2 text-[10px] uppercase tracking-wide text-[var(--color-ink-muted)]">
+            <p className="mt-2 text-[10px] uppercase tracking-wide text-ink-muted">
               {message.timings.total}ms total &middot; {message.timings.retrieve}ms retrieve
               &middot; {message.timings.generate}ms generate
             </p>
