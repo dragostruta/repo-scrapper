@@ -28,16 +28,14 @@ export function CitationChip({
         onClick={toggle}
         title={`score ${citation.score.toFixed(2)} - click to see the code`}
         aria-expanded={expanded}
-        className="rounded-full border border-[var(--color-border-subtle)] px-2 py-0.5 text-xs text-[var(--color-ink-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+        className="rounded-full border border-border-subtle px-2 py-0.5 text-xs text-ink-muted hover:border-accent hover:text-accent"
       >
         {citationLabel(citation)}
       </button>
 
       {expanded && (
-        <div className="mt-2 w-full max-w-full rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3">
-          {loading && (
-            <p className="text-xs text-[var(--color-ink-muted)]">Loading excerpt&hellip;</p>
-          )}
+        <div className="mt-2 w-full max-w-full rounded-lg border border-border-subtle bg-surface p-3">
+          {loading && <p className="text-xs text-ink-muted">Loading excerpt&hellip;</p>}
           {error && (
             <p role="alert" className="text-xs text-rose-400">
               {error}

@@ -9,5 +9,6 @@ export default function Home() {
 
   if (restoring) return null;
   if (!active) return <RepoIntake onIndexed={select} resume={resumable} />;
+
   return <ChatPanel key={active.id} repo={active} onSwitchRepo={clear} />;
 }

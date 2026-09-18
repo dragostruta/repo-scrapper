@@ -1,0 +1,4 @@
+{
+  "jest.rootPath": "apps/api",
+  "jest.jestCommandLine": "../../node_modules/.bin/dotenv -e ../../.env -- env NODE_OPTIONS=--experimental-vm-modules ../../node_modules/.bin/jest"
+}
