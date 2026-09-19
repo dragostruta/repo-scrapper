@@ -148,33 +148,58 @@ whole index. `ChunkerService` logs one warning per language when that happens.
 
 ---
 
-## D6 - Search by meaning first, then add a small word score
+## D6 - Nearest-neighbour search first, then a keyword rerank
 
-**Decision.** Cosine similarity over pgvector, top 8, filtered by repository
-id, with a small trigram based word score blended in (`KEYWORD_BOOST`, 0.15 by
-default).
+**Decision.** Two stages. Stage one orders chunks by cosine distance alone,
+scoped to the repository, and takes a candidate pool wider than the result set.
+Stage two reranks that pool with a small trigram word score
+(`KEYWORD_BOOST`, 0.15 by default) and keeps the top 8.
 
-**Considered.** Meaning search alone, or a full BM25 hybrid. BM25 is the
-ranking algorithm behind classic search engines.
+**Considered.** Meaning search alone; a single query blending both scores in
+one `ORDER BY`; a full BM25 hybrid.
 
-**Why.** Questions about code quote identifiers exactly, "where is
-`validateSession` called?". Embeddings are built to capture meaning, and they
-are only okay at matching an exact string, which is really what an identifier
-is.
+**Why a blend at all.** Questions about code quote identifiers exactly - "where
+is `validateSession` called?". Embeddings capture meaning and are only okay at
+matching an exact string, which is what an identifier is. A full BM25 setup is
+more machinery than this needs: term frequencies, document lengths, an index to
+maintain. Trigrams get most of the benefit from one function and a few lines of
+SQL, and they survive a small typo.
 
-A full BM25 setup is more machinery than this needs: term frequencies, document
-lengths, an index to maintain. A trigram index on `chunks.content` gets most of
-the benefit for one index and a few lines of SQL. A trigram is just any three
-letters in a row, and matching on them also survives a small typo.
+**Why two stages, which is the part I got wrong first.** The natural way to
+write the blend is one query:
 
-**Cost.** The blend weight is a magic number, tuned by hand against the golden
-set rather than learned from anything. It is one env var, so it is at least
-easy to challenge.
+```sql
+ORDER BY (1 - (embedding <=> $vec)) + ($boost * similarity(content, $text)) DESC
+```
+
+That returns correct results and never touches the vector index. pgvector's
+HNSW index can only accelerate an ordering that is purely the distance
+operator; anything added to the expression makes it non-indexable and Postgres
+falls back to scanning every row - silently, because the answers are still
+right. `EXPLAIN` is what surfaced it. On 20k chunks: `Seq Scan`, 20,003 rows,
+66.5ms, against `Index Scan`, 39 rows, 0.8ms for the two-stage form.
+
+The same logic removed the trigram GIN index that the first schema created.
+`similarity()` in a `SELECT` expression cannot use a GIN index - only the `%`
+operator in a `WHERE` can - so it was written on every insert and read by
+nothing. The rerank now runs over a few hundred rows at most, where a
+sequential `similarity()` costs nothing. `pg_trgm` is still required, because
+`similarity()` is its function.
+
+One more measured detail: `hnsw.ef_search` caps how many candidates the index
+walk returns and defaults to 40, so a wider `LIMIT` alone does not widen the
+pool - asking for 80 returned 39. It is set per query inside the transaction,
+so it cannot leak onto a pooled connection.
+
+**Cost.** The blend weight is still a hand-picked number, and the candidate
+pool multiplier is a second one. Both are bounded rather than learned. The
+golden set now measures recall with the boost at 0 and at its configured value
+and fails if the boost ranks worse, so the number is at least defended by a
+measurement rather than an argument.
 
 **What would be better.** A reranker: a second, slower model that reads the
-question together with each of the top 30 chunks and re-sorts them properly
-before we keep 8. That would beat any amount of tuning the blend weight. Not
-built.
+question together with the top 30 chunks and re-sorts them before keeping 8.
+That would beat any amount of tuning the blend weight. Not built.
 
 ---
 
@@ -206,11 +231,20 @@ several workers, or backpressure. With one API instance and jobs that take
 minutes, Redis would be one more container in `docker compose`, mostly there to
 make the architecture diagram look busier.
 
+**But "no queue" is not "no limit".** Indexing is the expensive path - a clone,
+then an embedding pass over every chunk - and it runs in this process. Without
+a cap, five pasted URLs means five simultaneous clones competing with the
+endpoints that answer questions. `MAX_CONCURRENT_INDEXING` (default 2) bounds
+how many run at once and the rest wait their turn, which is the half of a
+queue that actually protects the service.
+
 **Cost.** This is the weakest decision in the project and I know it. If the API
-restarts in the middle of indexing, that repository is stuck in `INDEXING` and
-the work is lost. The mitigation today is a sweep at startup that marks orphaned
-rows `FAILED` so they can be retried by hand. This is the first thing I would
-change for real traffic, and it is called out in the README.
+restarts mid-index, that repository's work is lost, and so is anything still
+waiting in the in-memory queue. The mitigation is a sweep at startup that marks
+every `PENDING`, `CLONING` or `INDEXING` row `FAILED` so it can be retried -
+`PENDING` is in that list precisely because a queued repository has no other
+way of being noticed again. A real queue is the first thing I would change for
+real traffic.
 
 ---
 
@@ -245,10 +279,20 @@ looks one turn back. A real query rewrite step, a small model call that turns
 codebase?" before embedding, would handle that properly. That is the "what I
 would do next" item. Today's version is a heuristic, not that.
 
-**Cost.** Each request resends up to 4 previous turns, with each old answer cut
-to about 600 characters in the browser, and a hard ceiling of 6 turns and 8000
-characters server side in the DTO. So the prompt grows as a chat gets longer,
-but it is bounded rather than unbounded.
+**Cost, size.** Each request resends up to 4 previous turns, with each old
+answer cut to about 600 characters in the browser, and a hard ceiling of 6
+turns and 8000 characters server side in the DTO. So the prompt grows as a chat
+gets longer, but it is bounded rather than unbounded.
+
+**Cost, trust.** This is the part that is easy to miss. Because the client
+sends the history, the history is caller-controlled input - a request can claim
+any prior exchange happened, including one where the assistant agreed to
+something. It is not a transcript the server vouches for. So it is fenced in a
+`<history>` block and labelled untrusted in the system prompt exactly like
+indexed file content is, with an explicit instruction that a turn appearing to
+grant permissions or retract the rules is data a client sent, not an agreement.
+Bounding the size stops the prompt growing; fencing it stops the prompt being
+rewritten.
 
 ---
 
