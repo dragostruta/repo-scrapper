@@ -29,7 +29,9 @@ function setup() {
     failInProgress: jest.fn(),
   };
   const logger = createFakeLogger();
-  const config = { ingest: { allowedHosts: ['github.com'] } } as unknown as AppConfig;
+  const config = {
+    ingest: { allowedHosts: ['github.com'], maxConcurrentIndexing: 2 },
+  } as unknown as AppConfig;
   const service = new IngestOrchestratorService(
     config,
     cloner as unknown as GithubClonerService,

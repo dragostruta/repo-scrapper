@@ -81,7 +81,7 @@ export class RepositoryStore {
   /** Marks every CLONING/INDEXING row FAILED; returns how many there were. */
   async failInProgress(message: string): Promise<number> {
     const { count } = await this.prisma.repository.updateMany({
-      where: { status: { in: ['CLONING', 'INDEXING'] } },
+      where: { status: { in: ['PENDING', 'CLONING', 'INDEXING'] } },
       data: { status: 'FAILED', error: message },
     });
     return count;

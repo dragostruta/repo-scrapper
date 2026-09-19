@@ -112,12 +112,12 @@ describe('RepositoryStore', () => {
     expect(data.error).toHaveLength(2000);
   });
 
-  it('failInProgress fails only CLONING/INDEXING rows and returns the count', async () => {
+  it('failInProgress fails every row that cannot still be running after a restart', async () => {
     const { store, repository } = setup();
     repository.updateMany.mockResolvedValue({ count: 2 });
     expect(await store.failInProgress('restarted')).toBe(2);
     expect(repository.updateMany).toHaveBeenCalledWith({
-      where: { status: { in: ['CLONING', 'INDEXING'] } },
+      where: { status: { in: ['PENDING', 'CLONING', 'INDEXING'] } },
       data: { status: 'FAILED', error: 'restarted' },
     });
   });

@@ -4,6 +4,7 @@ import { AppConfig } from '../config/app-config';
 import { AppLogger } from '../common/logging/logger.service';
 import { RepositoryNotFoundError } from '../common/errors/domain-errors';
 import { errorMessage } from '../common/errors/error-message';
+import { Semaphore } from '../common/semaphore';
 import { GithubClonerService } from '../ingest/github-cloner.service';
 import { parseGithubUrl, type ParsedGithubRepo } from '../ingest/parse-github-url';
 import { RepositoryStore } from '../persistence/repository.store';
@@ -26,6 +27,8 @@ export const INTERRUPTED_MESSAGE = 'Indexing was interrupted by a server restart
 @Injectable()
 export class IngestOrchestratorService {
   private readonly logger;
+  /** Caps how many repositories are cloned and embedded at the same time. */
+  private readonly indexingSlots: Semaphore;
 
   constructor(
     private readonly config: AppConfig,
@@ -35,6 +38,7 @@ export class IngestOrchestratorService {
     logger: AppLogger,
   ) {
     this.logger = logger.forContext('IngestOrchestratorService');
+    this.indexingSlots = new Semaphore(this.config.ingest.maxConcurrentIndexing);
   }
 
   /** Returns immediately; indexing continues in the background (D8). */
@@ -58,8 +62,9 @@ export class IngestOrchestratorService {
     return this.repositories.list();
   }
 
-  /** Called once at boot: a row still CLONING/INDEXING can't really be
-   * running after a restart, so mark it FAILED and therefore retryable. */
+  /** Called once at boot: a row still PENDING, CLONING or INDEXING can't
+   * really be running after a restart - the in-memory indexing queue died with
+   * the process - so mark it FAILED and therefore retryable. */
   async recoverInterruptedIndexing(): Promise<void> {
     const count = await this.repositories.failInProgress(INTERRUPTED_MESSAGE);
     if (count > 0) {
@@ -100,11 +105,22 @@ export class IngestOrchestratorService {
     return created;
   }
 
-  /** The indexer records its own failures; this only guards against a bug
-   * escaping it as an unhandled rejection. */
+  /**
+   * Hands the repository to the indexer without waiting for it, but only
+   * MAX_CONCURRENT_INDEXING of them actually run at once - the rest queue.
+   * The indexer records its own failures; the catch here only guards against
+   * a bug escaping it as an unhandled rejection.
+   */
   private indexInBackground(repositoryId: string, repo: ParsedGithubRepo): void {
-    void this.indexer
-      .index(repositoryId, repo)
+    if (this.indexingSlots.activeCount >= this.config.ingest.maxConcurrentIndexing) {
+      this.logger.info(
+        { repositoryId, queued: this.indexingSlots.queuedCount + 1 },
+        'indexing queued - concurrency limit reached',
+      );
+    }
+
+    void this.indexingSlots
+      .run(() => this.indexer.index(repositoryId, repo))
       .catch((err: unknown) =>
         this.logger.error(
           { repositoryId, err: errorMessage(err) },

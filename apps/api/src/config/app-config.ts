@@ -40,6 +40,7 @@ const envSchema = z.object({
   MAX_FILES: z.coerce.number().int().positive().default(5000),
   MAX_FILE_SIZE_KB: z.coerce.number().int().positive().default(512),
   CLONE_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+  MAX_CONCURRENT_INDEXING: z.coerce.number().int().positive().max(16).default(2),
   ALLOWED_REPO_HOSTS: z.string().default('github.com'),
 });
 
@@ -129,6 +130,7 @@ export class AppConfig {
       maxFiles: env.MAX_FILES,
       maxFileSizeBytes: env.MAX_FILE_SIZE_KB * 1024,
       cloneTimeoutMs: env.CLONE_TIMEOUT_MS,
+      maxConcurrentIndexing: env.MAX_CONCURRENT_INDEXING,
       allowedHosts: Object.freeze(parseHostList(env.ALLOWED_REPO_HOSTS)),
     });
   }
