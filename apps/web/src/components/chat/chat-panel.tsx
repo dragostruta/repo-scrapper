@@ -35,7 +35,21 @@ export function ChatPanel({
         </button>
       </header>
 
-      <div className="flex-1 space-y-6 overflow-y-auto pb-4">
+      {/*
+        One live region for the whole conversation, rather than one per
+        message: a screen reader announces an answer as it arrives without
+        stealing focus from the input. tabIndex makes the transcript
+        scrollable by keyboard, which an overflow container is not by default.
+      */}
+      <div
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-busy={pending}
+        aria-label={`Conversation about ${repo.name}`}
+        tabIndex={0}
+        className="flex-1 space-y-6 overflow-y-auto pb-4"
+      >
         {messages.length === 0 && <StarterQuestions onPick={(q) => void ask(q)} />}
         {messages.map((message) => (
           <MessageBubble key={message.id} message={message} repositoryId={repo.id} />

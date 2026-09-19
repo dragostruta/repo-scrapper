@@ -13,7 +13,7 @@ export function StarterQuestions({ onPick }: { onPick: (question: string) => voi
         Ask how something works, where a piece of functionality lives, or what an endpoint does.
         Answers are grounded in this repository only.
       </p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Example questions">
         {STARTER_QUESTIONS.map((question) => (
           <button
             key={question}

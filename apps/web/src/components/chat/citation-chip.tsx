@@ -1,5 +1,6 @@
 'use client';
 
+import { useId } from 'react';
 import type { Citation } from '@app/shared';
 import { useChunkExcerpt } from '@/hooks/use-chunk-excerpt';
 
@@ -20,6 +21,7 @@ export function CitationChip({
     repositoryId,
     citation.chunkId,
   );
+  const panelId = useId();
 
   return (
     <div className="inline-block max-w-full align-top">
@@ -28,13 +30,20 @@ export function CitationChip({
         onClick={toggle}
         title={`score ${citation.score.toFixed(2)} - click to see the code`}
         aria-expanded={expanded}
+        aria-controls={panelId}
+        // title is not reliably announced, so the score and the action go in
+        // the accessible name rather than only in the tooltip.
+        aria-label={`${expanded ? 'Hide' : 'Show'} code for ${citationLabel(citation)}, relevance score ${citation.score.toFixed(2)}`}
         className="rounded-full border border-border-subtle px-2 py-0.5 text-xs text-ink-muted hover:border-accent hover:text-accent"
       >
         {citationLabel(citation)}
       </button>
 
       {expanded && (
-        <div className="mt-2 w-full max-w-full rounded-lg border border-border-subtle bg-surface p-3">
+        <div
+          id={panelId}
+          className="mt-2 w-full max-w-full rounded-lg border border-border-subtle bg-surface p-3"
+        >
           {loading && <p className="text-xs text-ink-muted">Loading excerpt&hellip;</p>}
           {error && (
             <p role="alert" className="text-xs text-rose-400">

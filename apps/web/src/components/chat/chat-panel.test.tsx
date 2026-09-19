@@ -19,6 +19,47 @@ describe('ChatPanel', () => {
       />,
     );
 
+  describe('accessibility', () => {
+    it('announces answers through one transcript live region, not one per message', async () => {
+      renderPanel();
+      const transcript = screen.getByRole('log', { name: /conversation about acme\/widgets/i });
+
+      expect(transcript).toHaveAttribute('aria-live', 'polite');
+      // An overflow container is not keyboard-scrollable without this.
+      expect(transcript).toHaveAttribute('tabindex', '0');
+
+      await userEvent.type(screen.getByRole('textbox', { name: 'Question' }), 'how?');
+      await userEvent.click(screen.getByRole('button', { name: /^Ask/ }));
+
+      // The answer must land inside the live region for it to be announced.
+      expect(await within(transcript).findByText(/Login hashes the password/i)).toBeInTheDocument();
+    });
+
+    it('marks the transcript busy while an answer is in flight', async () => {
+      const pending = deferred<ReturnType<typeof anAskResponse>>();
+      vi.spyOn(api, 'askRepository').mockReturnValue(pending.promise);
+      renderPanel();
+
+      await userEvent.type(screen.getByRole('textbox', { name: 'Question' }), 'how?');
+      await userEvent.click(screen.getByRole('button', { name: /^Ask/ }));
+
+      expect(screen.getByRole('log')).toHaveAttribute('aria-busy', 'true');
+
+      pending.resolve(anAskResponse());
+      expect(await screen.findByRole('log')).toHaveAttribute('aria-busy', 'false');
+    });
+
+    it('names each citation button with its action and score, not just the path', async () => {
+      renderPanel();
+      await userEvent.click(screen.getByRole('button', { name: STARTER_QUESTIONS[0] }));
+
+      const chip = await screen.findByRole('button', { name: /src\/auth\.ts:10-20 \(login\)/ });
+      expect(chip).toHaveAccessibleName(/show code for/i);
+      expect(chip).toHaveAccessibleName(/relevance score/i);
+      expect(chip).toHaveAttribute('aria-controls');
+    });
+  });
+
   it('shows the repository summary', () => {
     renderPanel();
     expect(screen.getByRole('heading', { name: 'acme/widgets' })).toBeInTheDocument();
@@ -50,14 +91,14 @@ describe('ChatPanel', () => {
 
     expect(screen.getByText('How does login work?')).toBeInTheDocument();
     expect(screen.getByText(/Thinking/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Ask/ })).toBeDisabled();
 
     request.resolve(anAskResponse());
 
     const answer = await screen.findByRole('article');
     expect(within(answer).getByText('src/auth.ts').tagName).toBe('CODE');
     expect(
-      within(answer).getByRole('button', { name: 'src/auth.ts:10-20 (login)' }),
+      within(answer).getByRole('button', { name: /src\/auth\.ts:10-20 \(login\)/ }),
     ).toBeInTheDocument();
     expect(within(answer).getByText(/320ms total/)).toBeInTheDocument();
     expect(screen.queryByText(/Thinking/)).not.toBeInTheDocument();

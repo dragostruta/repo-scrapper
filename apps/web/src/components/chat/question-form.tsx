@@ -20,7 +20,11 @@ export function QuestionForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-2 border-t border-border-subtle pt-4">
+    <form
+      onSubmit={handleSubmit}
+      aria-busy={disabled}
+      className="flex gap-2 border-t border-border-subtle pt-4"
+    >
       <input
         value={question}
         onChange={(e) => setQuestion(e.target.value)}
@@ -33,7 +37,7 @@ export function QuestionForm({
         disabled={!canSubmit}
         className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
       >
-        Ask
+        {disabled ? 'Asking…' : 'Ask'}
       </button>
     </form>
   );

@@ -26,7 +26,7 @@ describe('CitationChip', () => {
       content: 'export function login() { return hash(pw); }',
     });
     render(<CitationChip repositoryId="repo-1" citation={aCitation()} />);
-    const chip = screen.getByRole('button', { name: 'src/auth.ts:10-20 (login)' });
+    const chip = screen.getByRole('button', { name: /src\/auth\.ts:10-20 \(login\)/ });
     expect(chip).toHaveAttribute('aria-expanded', 'false');
 
     await userEvent.click(chip);

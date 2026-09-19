@@ -10,11 +10,13 @@ export function MessageBubble({
   repositoryId: string;
 }) {
   return (
-    <article className="space-y-2">
+    // The surrounding transcript is the live region (see ChatPanel), so
+    // nothing in here announces itself separately - that would double up.
+    <article className="space-y-2" aria-label={`Question: ${message.question}`}>
       <p className="text-sm font-medium">{message.question}</p>
 
       {message.pending && (
-        <p className="text-sm text-ink-muted" aria-live="polite">
+        <p className="text-sm text-ink-muted">
           <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-accent" />
           Thinking&hellip;
         </p>

@@ -18,7 +18,7 @@ describe('QuestionForm', () => {
   it('cannot submit an empty or whitespace-only question', async () => {
     const onAsk = vi.fn();
     render(<QuestionForm onAsk={onAsk} disabled={false} />);
-    const button = screen.getByRole('button', { name: 'Ask' });
+    const button = screen.getByRole('button', { name: /^Ask/ });
 
     expect(button).toBeDisabled();
     await userEvent.type(screen.getByRole('textbox'), '   {Enter}');
@@ -34,6 +34,6 @@ describe('QuestionForm', () => {
 
     expect(onAsk).not.toHaveBeenCalled();
     expect(screen.getByRole('textbox')).toHaveValue('next question');
-    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Ask/ })).toBeDisabled();
   });
 });
