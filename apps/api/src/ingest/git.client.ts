@@ -10,6 +10,16 @@ const NON_INTERACTIVE_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo' };
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
+export interface CloneOptions {
+  timeoutMs: number;
+  /**
+   * Cancels the clone mid-flight. GithubClonerService uses this to stop a
+   * repository that is growing past the size limit, rather than discovering
+   * it only once the whole thing has landed on disk.
+   */
+  signal?: AbortSignal;
+}
+
 /** Extracts HEAD's sha from `git ls-remote <url> HEAD` output, or null if the
  * output isn't a single well-formed sha. */
 export function parseRemoteHeadSha(stdout: string): string | null {
@@ -24,11 +34,15 @@ export function parseRemoteHeadSha(stdout: string): string | null {
  */
 @Injectable()
 export class GitClient {
-  async shallowClone(url: string, targetDir: string, timeoutMs: number): Promise<void> {
+  async shallowClone(url: string, targetDir: string, options: CloneOptions): Promise<void> {
     await execFileAsync(
       'git',
       ['clone', '--depth', '1', '--single-branch', '--no-tags', '--', url, targetDir],
-      { timeout: timeoutMs, env: { ...process.env, ...NON_INTERACTIVE_ENV } },
+      {
+        timeout: options.timeoutMs,
+        signal: options.signal,
+        env: { ...process.env, ...NON_INTERACTIVE_ENV },
+      },
     );
   }
 

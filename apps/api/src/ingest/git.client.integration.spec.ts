@@ -40,7 +40,7 @@ describe('GitClient (real git, local repository)', () => {
 
   it('shallowClone checks out the working tree and headSha reports its commit', async () => {
     const target = join(workDir, 'clone');
-    await git.shallowClone(originUrl, target, 10_000);
+    await git.shallowClone(originUrl, target, { timeoutMs: 10_000 });
 
     expect(await readFile(join(target, 'README.md'), 'utf-8')).toBe('# hello\n');
     expect(await git.headSha(target)).toBe(commitSha);
@@ -48,7 +48,9 @@ describe('GitClient (real git, local repository)', () => {
 
   it('shallowClone rejects for a repository that does not exist', async () => {
     await expect(
-      git.shallowClone(`file://${join(workDir, 'missing')}`, join(workDir, 'x'), 10_000),
+      git.shallowClone(`file://${join(workDir, 'missing')}`, join(workDir, 'x'), {
+        timeoutMs: 10_000,
+      }),
     ).rejects.toThrow();
   });
 

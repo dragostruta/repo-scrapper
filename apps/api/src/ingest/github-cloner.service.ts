@@ -20,6 +20,28 @@ const HEAD_PROBE_TIMEOUT_MS = 15_000;
 const BYTES_PER_MB = 1024 * 1024;
 const CLONE_METADATA_DIRS: ReadonlySet<string> = new Set(['.git']);
 
+/** How often the growing clone is measured while git is still running. */
+const SIZE_POLL_INTERVAL_MS = 1_000;
+
+/**
+ * The watchdog measures everything on disk, `.git` included, while the final
+ * size check measures repository content only. A shallow clone holds the
+ * content twice - packed under `.git` and checked out in the worktree - so the
+ * disk ceiling is the content limit doubled. Without that headroom a
+ * repository sitting just under the limit would be killed for its own pack
+ * file.
+ */
+const DISK_HEADROOM_MULTIPLIER = 2;
+
+/** Nothing is skipped when measuring disk usage: `.git` is most of it. */
+const NOTHING_SKIPPED: ReadonlySet<string> = new Set();
+
+interface CloneWatchdog {
+  /** True once the clone was aborted for exceeding the disk ceiling. */
+  readonly tripped: boolean;
+  stop(): void;
+}
+
 /**
  * Shallow-clones a public GitHub repository into a throwaway directory under
  * WORKSPACE_DIR. Guardrails live here: HTTPS + host allowlist (enforced
@@ -84,16 +106,66 @@ export class GithubClonerService {
   }
 
   private async fetchWorkingTree(repo: ParsedGithubRepo, dir: string): Promise<void> {
-    const { cloneTimeoutMs } = this.config.ingest;
+    const { cloneTimeoutMs, maxRepoSizeBytes } = this.config.ingest;
+    const controller = new AbortController();
+    const watchdog = this.abortWhenOversized(dir, maxRepoSizeBytes, controller);
+
     try {
-      await this.git.shallowClone(repo.cloneUrl, dir, cloneTimeoutMs);
+      await this.git.shallowClone(repo.cloneUrl, dir, {
+        timeoutMs: cloneTimeoutMs,
+        signal: controller.signal,
+      });
     } catch (err) {
+      if (watchdog.tripped) {
+        this.logger.warn({ repo: repo.name }, 'clone aborted - repository outgrew the size limit');
+        throw new RepositoryTooLargeError(
+          `${repo.name} passed the ${Math.round(maxRepoSizeBytes / BYTES_PER_MB)}MB limit while ` +
+            `cloning, so the clone was stopped before it finished.`,
+        );
+      }
       this.logger.warn({ repo: repo.name, err: errorMessage(err) }, 'clone failed');
       throw new RepositoryCloneError(
         `Could not clone ${repo.name}. It may not exist, be private, or the clone exceeded ` +
           `the ${cloneTimeoutMs}ms timeout.`,
       );
+    } finally {
+      watchdog.stop();
     }
+  }
+
+  /**
+   * Polls the clone directory while git runs and aborts as soon as it crosses
+   * the disk ceiling. A shallow clone with a timeout still lets a very large
+   * repository write for the whole timeout window, so the size limit has to be
+   * enforced during the clone, not only after it.
+   */
+  private abortWhenOversized(
+    dir: string,
+    maxContentBytes: number,
+    controller: AbortController,
+  ): CloneWatchdog {
+    const ceiling = maxContentBytes * DISK_HEADROOM_MULTIPLIER;
+    let tripped = false;
+
+    const timer = setInterval(() => {
+      // The directory does not exist for the first moments of a clone, and
+      // files move under us while git works - either way, skip this tick.
+      void directorySize(dir, NOTHING_SKIPPED)
+        .then((bytes) => {
+          if (bytes <= ceiling || tripped) return;
+          tripped = true;
+          controller.abort();
+        })
+        .catch(() => undefined);
+    }, SIZE_POLL_INTERVAL_MS);
+    timer.unref();
+
+    return {
+      get tripped() {
+        return tripped;
+      },
+      stop: () => clearInterval(timer),
+    };
   }
 
   private async assertWithinSizeLimit(repo: ParsedGithubRepo, dir: string): Promise<number> {

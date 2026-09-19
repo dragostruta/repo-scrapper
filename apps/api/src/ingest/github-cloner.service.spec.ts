@@ -53,9 +53,42 @@ describe('GithubClonerService', () => {
     expect(git.shallowClone).toHaveBeenCalledWith(
       'https://github.com/acme/widgets.git',
       cloned.dir,
-      5_000,
+      expect.objectContaining({ timeoutMs: 5_000, signal: expect.anything() }),
     );
   });
+
+  it('aborts a clone that outgrows the size limit instead of waiting for it to finish', async () => {
+    // A clone that keeps writing until something stops it. Without the
+    // watchdog this only ends at the timeout, by which point the disk is full.
+    const git = fakeGit({
+      shallowClone: jest.fn(async (_url: string, dir: string, options: { signal: AbortSignal }) => {
+        await mkdir(dir, { recursive: true });
+        for (let i = 0; i < 400 && !options.signal.aborted; i++) {
+          await writeFile(join(dir, `blob-${i}.bin`), 'x'.repeat(50_000));
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        if (options.signal.aborted) throw new Error('aborted');
+      }),
+    });
+
+    await expect(build(git, 200_000).clone(aParsedRepo())).rejects.toThrow(RepositoryTooLargeError);
+  }, 20_000);
+
+  it('leaves nothing on disk after aborting an oversized clone', async () => {
+    const git = fakeGit({
+      shallowClone: jest.fn(async (_url: string, dir: string, options: { signal: AbortSignal }) => {
+        await mkdir(dir, { recursive: true });
+        for (let i = 0; i < 400 && !options.signal.aborted; i++) {
+          await writeFile(join(dir, `blob-${i}.bin`), 'x'.repeat(50_000));
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        if (options.signal.aborted) throw new Error('aborted');
+      }),
+    });
+
+    await expect(build(git, 200_000).clone(aParsedRepo())).rejects.toThrow();
+    expect(await readdir(workspaceDir).catch(() => [])).toEqual([]);
+  }, 20_000);
 
   it('gives every clone its own directory', async () => {
     const service = build(fakeGit());
