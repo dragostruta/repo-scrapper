@@ -26,17 +26,27 @@ describe('assembleContext', () => {
   });
 
   it('drops the lowest-scoring chunks first once the budget is exceeded', () => {
-    const big = 'x'.repeat(400); // ~100 tokens each
+    const big = 'x'.repeat(400); // ~134 tokens each
     const chunks = [
       chunk({ id: 'high', score: 0.9, content: big }),
       chunk({ id: 'mid', score: 0.7, content: big }),
       chunk({ id: 'low', score: 0.5, content: big }),
     ];
     // Budget for roughly 2 chunks' worth of tokens.
-    const result = assembleContext(chunks, 220);
+    const result = assembleContext(chunks, 300);
     const keptIds = result.chunks.map((c) => c.id);
     expect(keptIds).toEqual(['high', 'mid']);
     expect(keptIds).not.toContain('low');
+  });
+
+  it('skips an oversized chunk but still keeps smaller ones ranked below it', () => {
+    const chunks = [
+      chunk({ id: 'high', score: 0.9, content: 'a'.repeat(30) }),
+      chunk({ id: 'huge', score: 0.8, content: 'b'.repeat(10_000) }),
+      chunk({ id: 'small', score: 0.7, content: 'c'.repeat(30) }),
+    ];
+    const result = assembleContext(chunks, 100);
+    expect(result.chunks.map((c) => c.id)).toEqual(['high', 'small']);
   });
 
   it('always keeps at least one chunk even if it alone exceeds the budget', () => {

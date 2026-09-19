@@ -16,10 +16,16 @@ export function formatChunk(chunk: RetrievedChunk): string {
 }
 
 /**
- * Chunks arrive ranked highest score first. Keep adding them until the next
- * one would exceed the token budget, so the lowest-scoring chunks are the
- * ones dropped. The top chunk is always kept, even if it alone is over
- * budget - an answer with some context beats one with none.
+ * Chunks arrive ranked highest score first. Walk them in that order and keep
+ * each one that still fits, so the lowest-scoring chunks are the ones dropped.
+ *
+ * A chunk that does not fit is skipped rather than ending the walk: one
+ * unusually large chunk in the middle of the ranking should not cost us the
+ * smaller, still-relevant ones below it. Rank order among what is kept is
+ * preserved either way.
+ *
+ * The top chunk is always kept, even if it alone is over budget - an answer
+ * with some context beats one with none.
  */
 export function assembleContext(chunks: RetrievedChunk[], tokenBudget: number): AssembledContext {
   const kept: RetrievedChunk[] = [];
@@ -29,7 +35,7 @@ export function assembleContext(chunks: RetrievedChunk[], tokenBudget: number): 
   for (const chunk of chunks) {
     const block = formatChunk(chunk);
     const blockTokens = estimateTokens(block);
-    if (kept.length > 0 && tokens + blockTokens > tokenBudget) break;
+    if (kept.length > 0 && tokens + blockTokens > tokenBudget) continue;
 
     kept.push(chunk);
     blocks.push(block);
