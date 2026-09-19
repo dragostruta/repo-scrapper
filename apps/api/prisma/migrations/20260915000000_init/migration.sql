@@ -47,12 +47,21 @@ CREATE INDEX "chunks_repositoryId_filePath_idx" ON "chunks"("repositoryId", "fil
 
 -- HNSW over cosine distance. Built on an empty table here; pgvector fills it
 -- incrementally as chunks are inserted, which is fine at our scale.
+--
+-- This index is only reachable because ChunkStore.search orders its candidate
+-- stage by `embedding <=> $1` and nothing else. Blending the keyword boost
+-- into that ORDER BY - the obvious way to write hybrid search - makes the
+-- expression non-indexable and silently turns every query into a full scan,
+-- which is why the rerank happens in a second stage over the candidates.
 CREATE INDEX "chunks_embedding_hnsw_idx"
     ON "chunks" USING hnsw ("embedding" vector_cosine_ops);
 
--- Backs the lexical half of hybrid retrieval: code questions quote identifiers
--- verbatim, and embeddings are poor at exact-token matching.
-CREATE INDEX "chunks_content_trgm_idx" ON "chunks" USING gin ("content" gin_trgm_ops);
+-- No GIN trigram index on "content" on purpose. The keyword boost calls
+-- similarity() in a SELECT expression, and GIN can only serve the `%`
+-- operator in a WHERE clause - so such an index would be written on every
+-- insert and read by nothing. The rerank stage runs over at most a few
+-- hundred candidate rows, where a sequential similarity() is cheap.
+-- pg_trgm itself is still required: similarity() is its function.
 
 CREATE TABLE "query_logs" (
     "id" TEXT NOT NULL,
