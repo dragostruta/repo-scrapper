@@ -11,6 +11,7 @@
     "build": "npm run build --workspace=@app/shared && npm run build --workspace=@app/api && npm run build --workspace=@app/web && npm run build --workspace=@app/mcp",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run build --workspace=@app/shared && npm run typecheck --workspaces --if-present",
+    "pretest": "bash scripts/check-test-env.sh",
     "test": "npm run build --workspace=@app/shared && npm run test --workspaces --if-present",
     "db:migrate": "npm run db:migrate --workspace=@app/api",
     "db:generate": "npm run db:generate --workspace=@app/api",
