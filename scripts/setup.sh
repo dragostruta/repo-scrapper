@@ -19,6 +19,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/env-file.sh
 source "$SCRIPT_DIR/lib/env-file.sh"
+# shellcheck source=lib/wait-for-api.sh
+source "$SCRIPT_DIR/lib/wait-for-api.sh"
 
 if [[ "$PROVIDER" != "ollama" && "$PROVIDER" != "anthropic" ]]; then
   echo "Usage: npm run setup -- ollama|anthropic" >&2
@@ -52,6 +54,9 @@ fi
 # best-effort and never fails setup - if pruning fails (or `docker` needs a
 # permission prompt to run non-interactively) it's a no-op, not a blocker.
 docker image prune -f >/dev/null 2>&1 || true
+
+echo
+wait_for_api
 
 echo
 echo "Done."

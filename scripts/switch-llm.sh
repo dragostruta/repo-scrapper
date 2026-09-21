@@ -13,6 +13,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/env-file.sh
 source "$SCRIPT_DIR/lib/env-file.sh"
+# shellcheck source=lib/wait-for-api.sh
+source "$SCRIPT_DIR/lib/wait-for-api.sh"
 
 if [[ "$PROVIDER" != "ollama" && "$PROVIDER" != "anthropic" ]]; then
   echo "Usage: npm run llm:switch -- ollama|anthropic" >&2
@@ -45,4 +47,5 @@ else
 fi
 
 echo
+wait_for_api
 echo "Switched to $PROVIDER."

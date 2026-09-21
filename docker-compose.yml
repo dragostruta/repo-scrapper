@@ -46,6 +46,7 @@ services:
       MAX_FILES: ${MAX_FILES:-5000}
       MAX_FILE_SIZE_KB: ${MAX_FILE_SIZE_KB:-512}
       CLONE_TIMEOUT_MS: ${CLONE_TIMEOUT_MS:-120000}
+      MAX_CONCURRENT_INDEXING: ${MAX_CONCURRENT_INDEXING:-2}
       ALLOWED_REPO_HOSTS: ${ALLOWED_REPO_HOSTS:-github.com}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
@@ -74,7 +75,8 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 3000
