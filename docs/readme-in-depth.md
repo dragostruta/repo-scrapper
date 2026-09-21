@@ -1,28 +1,3 @@
-> **This is the original, longer draft of the README** — kept here because
-> the walkthrough content (the clickable per-flow file links, the layered
-> API breakdown, the full project structure) is still useful detail that
-> didn't fit the shorter version. **The current README is the canonical
-> reference** for how retrieval actually works today: it corrects two
-> things this draft gets wrong.
->
-> - **The retrieval query below** (`ChunkStore.search()`, "Step 4 — Finding
->   the right chunks") describes a single query blending cosine distance and
->   the keyword score in one `ORDER BY`. That query is correct but is never
->   indexable — pgvector's HNSW index only accelerates a pure-distance
->   ordering, so it silently fell back to a sequential scan on every search.
->   The current code runs two stages instead: a distance-only candidate
->   query the index can serve, then a rerank over that pool. See
->   [`docs/decisions.md`](decisions.md), D6, for the measured numbers.
-> - **The recall assertion** was `recall@2` over a 4-file fixture when this
->   was written; the golden set has since grown to 12 files and 14 questions
->   at `recall@3`, including deliberate near-miss pairs.
->
-> Everything else below — the flow-by-flow file links, the "why no
-> LangChain" reasoning, the production checklist — is unchanged and still
-> accurate. Start with the top-level [`README.md`](../README.md) first.
-
----
-
 # Code Documentation Assistant
 
 Give it a link to a public GitHub repository. It reads the code, and then you
