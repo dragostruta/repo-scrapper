@@ -1,4 +1,5 @@
 import { aChunkCandidate, aWalkedFile } from '../../test/helpers/builders';
+import { estimateTokens } from '../common/tokens';
 import type { ChunkerService } from '../chunking/chunker.service';
 import type { EmbeddingProvider } from '../embedding/embedding-provider';
 import type { ChunkStore } from '../persistence/chunk.store';
@@ -21,7 +22,10 @@ describe('toChunkRecords', () => {
       startLine: 1,
       endLine: 2,
       content: 'abcdefgh',
-      tokenCount: 2,
+      // Computed rather than hardcoded: a literal here duplicates the ratio
+      // inside estimateTokens, and the two silently drifted apart once
+      // already (CHARS_PER_TOKEN 4 -> 3) without this test catching it.
+      tokenCount: estimateTokens('abcdefgh'),
       embedding: [1],
     });
     expect(records[1]).toMatchObject({ symbol: null, embedding: [2] });
