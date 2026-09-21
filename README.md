@@ -232,7 +232,12 @@ where every answer is lexically obvious measures nothing:
 `KEYWORD_BOOST` was chosen by hand, so there is also a test that measures
 recall with the boost at `0` and at its configured value and fails if the boost
 ever ranks worse than not having it. The weight is a config value backed by a
-number, not by an argument.
+number, not by an argument - and the measurement found a real limit: no weight
+up to 1.2 could rescue an obliquely-phrased question the embedding model
+ranked badly, because at a weight small enough to be safe for ordinary
+queries, the trigram boost simply cannot add enough score to close a large
+embedding-distance gap. See D6 in `docs/decisions.md` for the numbers. A
+reranker is the fix; not built.
 
 What this does **not** measure is whether the answers themselves are good. That
 needs an eval harness with a model grading output, which was out of scope for
@@ -243,7 +248,10 @@ the time available. It is the first gap I would close.
 ## Key technical decisions
 
 Full reasoning for each, written at the time, is in
-[`docs/decisions.md`](docs/decisions.md). The short version:
+[`docs/decisions.md`](docs/decisions.md). An earlier, longer draft of this
+README with per-flow file walkthroughs is kept at
+[`docs/readme-in-depth.md`](docs/readme-in-depth.md), corrected where it
+disagreed with the current code. The short version of the decisions:
 
 | #   | Decision                                                      | What it costs                                   |
 | --- | ------------------------------------------------------------- | ----------------------------------------------- |

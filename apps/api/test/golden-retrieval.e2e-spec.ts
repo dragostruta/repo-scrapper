@@ -131,7 +131,7 @@ describe('golden-set retrieval', () => {
       expectedFile: 'src/logging.ts',
     },
     {
-      question: 'Where is the constant-time comparison done?',
+      question: 'What prevents a timing attack when checking the webhook signature?',
       expectedFile: 'src/webhook-verify.ts',
     },
     {

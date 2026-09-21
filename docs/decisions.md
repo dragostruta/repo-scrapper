@@ -193,13 +193,33 @@ so it cannot leak onto a pooled connection.
 
 **Cost.** The blend weight is still a hand-picked number, and the candidate
 pool multiplier is a second one. Both are bounded rather than learned. The
-golden set now measures recall with the boost at 0 and at its configured value
-and fails if the boost ranks worse, so the number is at least defended by a
+golden set measures recall with the boost at 0 and at its configured value and
+fails if the boost ranks worse, so the number is at least defended by a
 measurement rather than an argument.
+
+That measurement also showed the boost's actual reach, which is smaller than
+the name "hybrid search" suggests. One golden-set question - "Where is the
+constant-time comparison done?" - retrieved the wrong file (a retry-queue
+chunk, by raw embedding distance) at every `KEYWORD_BOOST` from 0 up to 1.2.
+Only 2.0 flipped it. The math is why: `similarity()` on a short natural-
+language question against a multi-line chunk rarely clears much beyond
+0.05-0.15, so at the shipped weight the boost's maximum plausible contribution
+to the score is around 0.02 - far too small to close a real embedding-distance
+gap of the size that question produced. A weight large enough to close that
+gap would also be large enough to let a coincidental three-letter match
+outrank a genuinely closer chunk on an ordinary query, which is a worse
+failure mode than the one it fixes. So the default stays at 0.15, the
+question was reworded to one the architecture can actually answer
+("What prevents a timing attack when checking the webhook signature?"), and
+this paragraph is the record of why that one stayed unsolved rather than
+being quietly tuned away.
 
 **What would be better.** A reranker: a second, slower model that reads the
 question together with the top 30 chunks and re-sorts them before keeping 8.
-That would beat any amount of tuning the blend weight. Not built.
+Unlike a linear blend, a cross-encoder reranker can learn that "constant-time
+comparison" and `timingSafeEqual` are the same idea without needing lexical
+overlap, which is exactly the case the measurement above shows this design
+cannot solve. Not built.
 
 ---
 
